@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.4)
 
+include(FetchContent)
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 set(libfranka_VERSION 0.13.3)
@@ -24,9 +26,32 @@ endif()
 set(THIRDPARTY_SOURCES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty" CACHE PATH
   "Directory for third-party sources")
 
+# Tracy
+#option( TRACY_ENABLE "" ON)
+#option( TRACY_ON_DEMAND "" ON)
+#FetchContent_Declare (
+#tracy
+#GIT_REPOSITORY https://github.com/wolfpld/tracy.git
+#GIT_TAG v0.10
+#GIT_SHALLOW TRUE
+#GIT_PROGRESS TRUE
+#OVERRIDE_FIND_PACKAGE
+#)
+#FetchContent_MakeAvailable (tracy)
+#install(
+#    TARGETS TracyClient
+#    EXPORT ${PROJECT_NAME}Targets
+#    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}/
+#    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/
+#    RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}/
+#    # More arguments as necessary...
+#  )
+
 ## Dependencies
 find_package(Poco REQUIRED COMPONENTS Net Foundation)
 find_package(Eigen3 REQUIRED)
+find_package(pinocchio REQUIRED)
+find_package(Tracy REQUIRED)
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
@@ -107,6 +132,7 @@ endif()
 
 target_include_directories(franka PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/common/include>
   $<INSTALL_INTERFACE:include>
 )
 
@@ -119,6 +145,7 @@ target_link_libraries(franka PRIVATE
 
 target_link_libraries(franka PUBLIC
   libfranka-common
+  Tracy::TracyClient
 )
 
 ## Installation
@@ -132,6 +159,10 @@ install(TARGETS franka libfranka-common
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 install(DIRECTORY include/ common/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+  USE_SOURCE_PERMISSIONS
+)
+
+install(DIRECTORY common/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
   USE_SOURCE_PERMISSIONS
 )
 

@@ -8,6 +8,8 @@
 
 #include "load_calculations.h"
 
+#include <tracy/Tracy.hpp>
+
 namespace franka {
 
 namespace {
@@ -48,6 +50,8 @@ Robot::Impl::Impl(std::unique_ptr<Network> network, size_t log_size, RealtimeCon
     throw std::invalid_argument("libfranka robot: Invalid argument");
   }
 
+  ZoneScoped;
+
   connect<research_interface::robot::Connect, research_interface::robot::kVersion>(*network_,
                                                                                    &ri_version_);
   updateState(network_->udpBlockingReceive<research_interface::robot::RobotState>());
@@ -56,6 +60,9 @@ Robot::Impl::Impl(std::unique_ptr<Network> network, size_t log_size, RealtimeCon
 RobotState Robot::Impl::update(
     const research_interface::robot::MotionGeneratorCommand* motion_command,
     const research_interface::robot::ControllerCommand* control_command) {
+  
+  ZoneScoped;
+
   network_->tcpThrowIfConnectionClosed();
 
   research_interface::robot::RobotCommand robot_command =
@@ -68,6 +75,7 @@ RobotState Robot::Impl::update(
 }
 
 void Robot::Impl::throwOnMotionError(const RobotState& robot_state, uint32_t motion_id) {
+  ZoneScoped;
   if (robot_state.robot_mode != RobotMode::kMove ||
       motion_generator_mode_ != current_move_motion_generator_mode_ ||
       controller_mode_ != current_move_controller_mode_) {
@@ -86,6 +94,7 @@ void Robot::Impl::throwOnMotionError(const RobotState& robot_state, uint32_t mot
 }
 
 RobotState Robot::Impl::readOnce() {
+  ZoneScoped;
   // Delete old data from the UDP buffer.
   research_interface::robot::RobotState robot_state;
   while (network_->udpReceive<decltype(robot_state)>(&robot_state)) {
@@ -95,6 +104,7 @@ RobotState Robot::Impl::readOnce() {
 }
 
 void Robot::Impl::writeOnce(const Torques& control_input) {
+  ZoneScoped;
   research_interface::robot::ControllerCommand control_command =
       createControllerCommand(control_input);
   research_interface::robot::MotionGeneratorCommand motion_command{};
@@ -124,6 +134,7 @@ void Robot::Impl::writeOnce(const MotionGeneratorType& motion_generator_input) {
 research_interface::robot::RobotCommand Robot::Impl::sendRobotCommand(
     const research_interface::robot::MotionGeneratorCommand* motion_command,
     const research_interface::robot::ControllerCommand* control_command) const {
+  ZoneScoped;
   research_interface::robot::RobotCommand robot_command{};
   if (motion_command != nullptr || control_command != nullptr) {
     robot_command.message_id = message_id_;
@@ -159,6 +170,7 @@ research_interface::robot::RobotCommand Robot::Impl::sendRobotCommand(
 }
 
 research_interface::robot::RobotState Robot::Impl::receiveRobotState() {
+  ZoneScoped;
   research_interface::robot::RobotState latest_accepted_state;
   latest_accepted_state.message_id = message_id_;
 
@@ -213,6 +225,8 @@ uint32_t Robot::Impl::startMotion(
   if (motionGeneratorRunning() || controllerRunning()) {
     throw ControlException("libfranka robot: Attempted to start multiple motions!");
   }
+
+  ZoneScoped;
 
   switch (motion_generator_mode) {
     case decltype(motion_generator_mode)::kJointPosition:
@@ -299,6 +313,7 @@ void Robot::Impl::finishMotion(
   }
 
   auto response = network_->tcpBlockingReceiveResponse<research_interface::robot::Move>(motion_id);
+  ZoneScoped;
   if (response.status == research_interface::robot::Move::Status::kReflexAborted) {
     throw createControlException("Motion finished commanded, but the robot is still moving!",
                                  response.status, robot_state.last_motion_errors, logger_.flush());
@@ -414,6 +429,7 @@ Model Robot::Impl::loadModel() const {
 }
 
 RobotState convertRobotState(const research_interface::robot::RobotState& robot_state) noexcept {
+  ZoneScoped;
   RobotState converted;
   converted.O_T_EE = robot_state.O_T_EE;
   converted.O_T_EE_d = robot_state.O_T_EE_d;
