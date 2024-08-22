@@ -165,7 +165,7 @@ inline packet_time_t parse_time(struct timespec *ts) {
   };
 }
 
-inline packet_time_t handle_time(struct msghdr *msg) {
+inline packet_time_t handle_time_back(struct msghdr *msg) {
   struct timespec *ts = NULL;
   struct cmsghdr *cmsg;
 
@@ -188,6 +188,49 @@ inline packet_time_t handle_time(struct msghdr *msg) {
 
   return parse_time(ts);
 }
+
+inline packet_time_t handle_time(struct msghdr* msg, bool is_tx = false) {
+  struct timespec* ts = NULL;
+  struct cmsghdr* cmsg;
+
+  for (cmsg = CMSG_FIRSTHDR(msg); cmsg; cmsg = CMSG_NXTHDR(msg, cmsg)) {
+    if (cmsg->cmsg_level != SOL_SOCKET)
+      continue;
+
+    if (cmsg->cmsg_type == SO_TIMESTAMPING) {
+      ts = (struct timespec*)CMSG_DATA(cmsg);
+      break;
+    }
+  }
+
+  if (ts == nullptr) {
+    return packet_time_t();
+  }
+
+  uint64_t nic_ts = 0;
+  uint64_t kernel_ts = 0;
+
+  // For transmit timestamps, the interpretation differs slightly
+  if (is_tx) {
+    kernel_ts = ts[0].tv_sec * 1000000000 + ts[0].tv_nsec;
+    // Transformed (hardware converted to software) timestamp
+    nic_ts = ts[2].tv_sec * 1000000000 + ts[2].tv_nsec;
+  } else {
+    // For receive timestamps
+    kernel_ts = ts[0].tv_sec * 1000000000 + ts[0].tv_nsec;
+    nic_ts = ts[2].tv_sec * 1000000000 + ts[2].tv_nsec;
+  }
+
+  auto sys_now = std::chrono::system_clock::now();
+  uint64_t user_ts = std::chrono::duration_cast<std::chrono::nanoseconds>(sys_now.time_since_epoch()).count();
+
+  return packet_time_t{
+    .nic_ts = nic_ts,
+    .kernel_ts = kernel_ts,
+    .user_ts = user_ts
+  };
+}
+
 
 template <typename T> int udp_timestamp_receive(std::array<uint8_t, sizeof(T)>& buffer, Poco::Net::DatagramSocket& socket, Poco::Net::SocketAddress& addr) {
   struct msghdr msg;
@@ -268,6 +311,46 @@ void Network::udpSend(const T& data) try {
   if (bytes_sent != sizeof(data)) {
     throw NetworkException("libfranka: could not send UDP data");
   }
+} catch (const Poco::Exception& e) {
+  using namespace std::string_literals;  // NOLINT(google-build-using-namespace)
+  throw NetworkException("libfranka: UDP send: "s + e.what());
+}
+
+template <typename T>
+void Network::udpSendTimestamp(const T& data) try {
+  std::lock_guard<std::mutex> _(udp_mutex_);
+
+  int bytes_sent = udp_socket_.sendTo(&data, sizeof(data), udp_server_address_);
+  if (bytes_sent != sizeof(data)) {
+    throw NetworkException("libfranka: could not send UDP data");
+  }
+  // Receive the transmit timestamp from the error queue
+  struct msghdr recv_msg = {};
+  struct iovec recv_iov;
+  char recv_buffer[sizeof(T)];
+  char control[1024];
+
+  recv_iov.iov_base = recv_buffer;
+  recv_iov.iov_len = sizeof(recv_buffer);
+
+  recv_msg.msg_iov = &recv_iov;
+  recv_msg.msg_iovlen = 1;
+  recv_msg.msg_control = control;
+  recv_msg.msg_controllen = sizeof(control);
+
+  // Block until the transmit timestamp is received
+  int got = recvmsg(udp_socket_.impl()->sockfd(), &recv_msg, MSG_ERRQUEUE);
+  if (got == -1) {
+    throw NetworkException("libfranka: could not retrieve transmit timestamp");
+  }
+
+  // Process the transmit timestamp
+  packet_time_t packet_time = handle_time(&recv_msg, true);
+  char packet_timing_str[1024];
+  sprintf(packet_timing_str, "Transmit timestamps - nic:%lu, kernel:%lu, user:%lu", packet_time.nic_ts, packet_time.kernel_ts, packet_time.user_ts);
+
+  TracyMessage(packet_timing_str, strlen(packet_timing_str));
+
 } catch (const Poco::Exception& e) {
   using namespace std::string_literals;  // NOLINT(google-build-using-namespace)
   throw NetworkException("libfranka: UDP send: "s + e.what());
