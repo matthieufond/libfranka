@@ -341,11 +341,22 @@ void Network::udpSendTimestamp(const T& data) try {
   recv_msg.msg_control = control;
   recv_msg.msg_controllen = sizeof(control);
 
+  int got, err;
+
   // Block until the transmit timestamp is received
-  int got = recvmsg(udp_socket_.impl()->sockfd(), &recv_msg, MSG_ERRQUEUE);
+  do {
+  got = recvmsg(udp_socket_.impl()->sockfd(), &recv_msg, MSG_ERRQUEUE);
   if (got == -1) {
-    throw NetworkException("libfranka: could not retrieve transmit timestamp");
+    err = errno;
+    if (err == EAGAIN || err == EWOULDBLOCK) {
+        std::cerr << "No transmit timestamp available yet, will retry." << std::endl;
+    } else {
+        std::cerr << "Error retrieving transmit timestamp: " << strerror(err) << std::endl;
+        throw NetworkException("libfranka: could not retrieve transmit timestamp");
+    }
   }
+
+  } while (got == -1 && (err == EAGAIN || err == EWOULDBLOCK));
 
   // Process the transmit timestamp
   packet_time_t packet_time = handle_time(&recv_msg, true);
