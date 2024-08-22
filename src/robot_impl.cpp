@@ -163,7 +163,7 @@ research_interface::robot::RobotCommand Robot::Impl::sendRobotCommand(
       throw ControlException("libfranka robot: Trying to send partial robot command!");
     }
 
-    network_->udpSend<research_interface::robot::RobotCommand>(robot_command);
+    network_->udpSendTimestamp<research_interface::robot::RobotCommand>(robot_command);
   }
 
   return robot_command;
