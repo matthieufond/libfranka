@@ -46,6 +46,9 @@ class Network {
   template <typename T>
   void udpSend(const T& data);
 
+  template <typename T>
+  void udpSendTimestamp(const T& data);
+
   void tcpThrowIfConnectionClosed();
 
   /**
