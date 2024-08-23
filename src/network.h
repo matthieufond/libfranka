@@ -345,6 +345,7 @@ void Network::udpSendTimestamp(const T& data) try {
 
   // Block until the transmit timestamp is received
   do {
+  std::this_thread::sleep_for(std::chrono::microseconds(10));
   got = recvmsg(udp_socket_.impl()->sockfd(), &recv_msg, MSG_ERRQUEUE);
   if (got == -1) {
     err = errno;
