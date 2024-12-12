@@ -9,6 +9,9 @@ set(GTEST_LIBRARIES gtest gmock gmock_main)
 
 include(SetupGoogleTest)
 
+find_package(fmt REQUIRED)
+find_package(magic_enum REQUIRED)
+
 foreach(lib ${GTEST_LIBRARIES})
   target_compile_options(${lib} PUBLIC -Wno-deprecated-copy)
 endforeach()
@@ -23,6 +26,8 @@ set(TEST_DEPENDENCIES
   franka
   libfranka-common
   pinocchio::pinocchio
+  fmt::fmt
+  magic_enum::magic_enum
 )
 set(TEST_INCLUDE_DIRECTORIES ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../src)
 
@@ -62,7 +67,7 @@ add_executable(run_all_tests
   vacuum_gripper_command_tests.cpp
 )
 
-set(TEST_COMPILE_DEFINITIONS FRANKA_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}")
+set(TEST_COMPILE_DEFINITIONS FRANKA_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}" FRANKA_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_definitions(run_all_tests PRIVATE ${TEST_COMPILE_DEFINITIONS})
 if(WIN32)
     target_compile_options(run_all_tests PRIVATE /bigobj)
@@ -72,6 +77,19 @@ target_include_directories(run_all_tests PRIVATE ${TEST_INCLUDE_DIRECTORIES})
 target_link_libraries(run_all_tests PUBLIC ${TEST_DEPENDENCIES})
 
 add_test(Default run_all_tests --gtest_output=xml:${TEST_OUTPUT_DIR}/default.xml)
+
+add_executable(franka_mock_server_example
+  example/mock_server_example.cpp
+  mock_server.cpp
+)
+target_link_libraries(franka_mock_server_example PRIVATE ${TEST_DEPENDENCIES})
+target_compile_definitions(franka_mock_server_example PRIVATE ${TEST_COMPILE_DEFINITIONS})
+
+add_executable(franka_mock_client_example
+  example/mock_client_example.cpp
+)
+target_link_libraries(franka_mock_client_example PRIVATE ${TEST_DEPENDENCIES})
+target_compile_definitions(franka_mock_client_example PRIVATE ${TEST_COMPILE_DEFINITIONS})
 
 if(BUILD_COVERAGE)
   find_program(LCOV_PROG lcov)

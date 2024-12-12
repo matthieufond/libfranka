@@ -50,6 +50,7 @@ RUN apt-get update \
     libconsole-bridge-dev \
     libtinyxml2-dev \
     lsb-release curl \
+    libfmt-dev \
     && rm -rf /var/lib/apt/lists/*
 
 RUN apt-get install -qqy lsb-release curl
@@ -62,5 +63,11 @@ RUN  echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/robotpkg.asc] http://robo
 
 RUN apt-get update \
     && apt-get install -qqy robotpkg-pinocchio
+
+# magic_enum
+RUN git clone --branch v0.9.5 https://github.com/Neargye/magic_enum.git                                                                        \
+    && cd magic_enum                                                                                                                           \
+    && cmake -S . -B build -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DMAGIC_ENUM_OPT_BUILD_EXAMPLES=0 -DMAGIC_ENUM_OPT_BUILD_TESTS=0 -DCMAKE_CXX_STANDARD=20 \
+    && cmake --build build --parallel `nproc` --target install
 
 USER $USERNAME
