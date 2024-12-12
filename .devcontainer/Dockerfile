@@ -73,5 +73,11 @@ ENV PATH=/opt/openrobots/bin:$PATH \
     PYTHONPATH=/opt/openrobots/lib/python3.10/site-packages:$PYTHONPATH \
     CMAKE_PREFIX_PATH=/opt/openrobots/lib/cmake:$CMAKE_PREFIX_PATH
 
+# magic_enum
+RUN git clone --branch v0.9.5 https://github.com/Neargye/magic_enum.git                                                                        \
+    && cd magic_enum                                                                                                                           \
+    && cmake -S . -B build -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DMAGIC_ENUM_OPT_BUILD_EXAMPLES=0 -DMAGIC_ENUM_OPT_BUILD_TESTS=0 -DCMAKE_CXX_STANDARD=20 \
+    && cmake --build build --parallel `nproc` --target install
+
 USER $USERNAME
 SHELL ["/bin/bash", "-c"]

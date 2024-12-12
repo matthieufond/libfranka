@@ -47,8 +47,10 @@ class MockServer {
   using ReceiveRobotCommandCallbackT =
       std::function<void(const research_interface::robot::RobotCommand&)>;
 
-  MockServer(ConnectCallbackT on_connect = ConnectCallbackT(), uint32_t sequence_number = 0);
-  ~MockServer();
+  MockServer(ConnectCallbackT on_connect = ConnectCallbackT(),
+             uint32_t sequence_number = 0,
+             std::string ip = "127.0.0.1");
+  virtual ~MockServer();
 
   template <typename T>
   MockServer& sendEmptyState();
@@ -92,7 +94,7 @@ class MockServer {
       std::function<typename T::Response(const typename T::Request&)> callback,
       uint32_t* command_id = nullptr);
 
-  MockServer& spinOnce();
+  virtual MockServer& spinOnce();
 
   template <typename T>
   T randomState();
@@ -121,6 +123,8 @@ class MockServer {
   bool ignore_udp_buffer_ = false;
 
   const ConnectCallbackT on_connect_;
+  std::string ip_;
+
   std::deque<std::pair<std::string, std::function<void(Socket&, Socket&)>>> commands_;
 
   MockServer& doForever(std::function<bool()> callback,
