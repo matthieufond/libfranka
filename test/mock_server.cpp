@@ -121,12 +121,12 @@ void MockServer<C>::serverThread() {
   udp_socket.setBlocking(true);
   Socket udp_socket_wrapper;
   udp_socket_wrapper.sendBytes = [&](const void* data, size_t size) {
-    std::lock_guard<std::mutex> _(udp_mutex_);
+    //std::lock_guard<std::mutex> _(udp_mutex_);
     int rv = udp_socket.sendTo(data, size, {remote_address.host(), udp_port});
     ASSERT_EQ(static_cast<int>(size), rv) << "Send error on UDP socket";
   };
   udp_socket_wrapper.receiveBytes = [&](void* data, size_t size) {
-    std::lock_guard<std::mutex> _(udp_mutex_);
+    //std::lock_guard<std::mutex> _(udp_mutex_);
     int rv = udp_socket.receiveFrom(data, size, remote_address);
     ASSERT_EQ(static_cast<int>(size), rv) << "Receive error on UDP socket";
   };
