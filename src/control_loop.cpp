@@ -7,6 +7,7 @@
 #include <cstring>
 #include <exception>
 #include <fstream>
+#include <iostream>
 
 #include <franka/control_tools.h>
 #include <franka/control_types.h>
@@ -117,8 +118,9 @@ void ControlLoop<T>::operator()() try {
     }
     robot_.finishMotion(motion_id_, &motion_command, nullptr);
   }
-} catch (...) {
+} catch (const Exception & exc) {
   try {
+    std::cout << "TODO: Handle stop properly, for now raise Exception: " << exc.what() << std::endl;
     robot_.cancelMotion(motion_id_);
   } catch (...) {
   }

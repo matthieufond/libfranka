@@ -98,7 +98,6 @@ std::string readFileToString(const std::string& filename) {
  * Struct to hold the modes of the robot
  */
 struct Modes {
-  std::mutex mut;
   r::ControllerMode ctrl_mode{r::ControllerMode::kOther};
   r::MotionGeneratorMode motion_mode{r::MotionGeneratorMode::kIdle};
   r::RobotMode robot_mode{r::RobotMode::kIdle};
@@ -121,12 +120,15 @@ class AescapeMockServer : public MockServer<C> {
    */
   AescapeMockServer& handleReadOnce() {
     MockServer<C>::template onSendUDP<r::RobotState>(
-        [&modes = this->modes_](r::RobotState& robot_state) {
-          std::lock_guard<std::mutex> modes_lck(modes.mut);
-          robot_state.robot_mode = modes.robot_mode;
-          robot_state.controller_mode = modes.ctrl_mode;
-          robot_state.motion_generator_mode = modes.motion_mode;
-          LOG_INFO("    -- Send robot_state");
+        [this](r::RobotState& robot_state) {
+          std::lock_guard<std::mutex> state_lck(state_mut_);
+          // Copy current state
+          // Mode
+          robot_state.robot_mode = modes_.robot_mode;
+          robot_state.controller_mode = modes_.ctrl_mode;
+          robot_state.motion_generator_mode = modes_.motion_mode;
+          // State
+          //LOG_INFO("    -- Send robot_state");
         });
     return *this;
   }
@@ -136,13 +138,18 @@ class AescapeMockServer : public MockServer<C> {
    */
   AescapeMockServer& handleUpdate() {
     handleReadOnce().spinOnce().onReceiveRobotCommand(
-        [&modes = this->modes_](const r::RobotCommand& cmd) {
-          LOG_INFO("    -- Received control robot command");
+        [this](const r::RobotCommand& cmd) {
+          // TODO(matthieu): Handle timeout
+          //LOG_INFO("    -- Received control robot command");
+          std::lock_guard<std::mutex> state_lck(state_mut_);
           if (cmd.motion.motion_generation_finished) {
             LOG_INFO("    -- Motion generation finished");
-            std::lock_guard<std::mutex> modes_lck(modes.mut);
-            modes.motion_mode = r::MotionGeneratorMode::kIdle;
-            modes.ctrl_mode = r::ControllerMode::kOther;
+            modes_.motion_mode = r::MotionGeneratorMode::kIdle;
+            modes_.ctrl_mode = r::ControllerMode::kOther;
+          } else {
+            cmd_ = cmd;
+            // Copy rest
+            // Process command. Probably notify some thread
           }
         });
     return *this;
@@ -153,14 +160,14 @@ class AescapeMockServer : public MockServer<C> {
    */
   AescapeMockServer& waitForMove() {
     MockServer<C>::template waitForCommand<r::Move>(
-        [&modes = this->modes_](const r::Move::Request& req) {
-          std::lock_guard<std::mutex> modes_lck(modes.mut);
-          modes.motion_mode = convertMode(req.motion_generator_mode);
-          modes.ctrl_mode = convertMode(req.controller_mode);
-          modes.robot_mode = r::RobotMode::kMove;
+        [this](const r::Move::Request& req) {
+          std::lock_guard<std::mutex> state_lck(state_mut_);
+          modes_.motion_mode = convertMode(req.motion_generator_mode);
+          modes_.ctrl_mode = convertMode(req.controller_mode);
+          modes_.robot_mode = r::RobotMode::kMove;
           LOG_INFO("    -- Move Received: Controller Mode: {}, Motion Mode: {}",
-                   magic_enum::enum_name(modes.ctrl_mode),
-                   magic_enum::enum_name(modes.motion_mode));
+                   magic_enum::enum_name(modes_.ctrl_mode),
+                   magic_enum::enum_name(modes_.motion_mode));
           return moveSuccessResp();
         },
         &move_id_);
@@ -186,8 +193,11 @@ class AescapeMockServer : public MockServer<C> {
   ~AescapeMockServer() = default;
 
  private:
+  std::mutex state_mut_;
   Modes modes_;
   uint32_t move_id_;
+  r::RobotCommand cmd_;
+  r::RobotState state_;
 };
 
 int main(int argc, char* argv[]) {
@@ -289,13 +299,34 @@ int main(int argc, char* argv[]) {
   LOG_INFO(" ++ ControlLoop Constructor DONE");
 
   LOG_INFO(" ++ operator()()");
-  server.handleUpdate().spinOnce();
-  // throwOnMotionError not triggered and go into control feedback loop
-  LOG_INFO("    -- Start control callback loop");
-  size_t count = 0;
-  while (++count < kControlLoopCount) {
+
+  // Main Loop
+
+  using clock = std::chrono::steady_clock;
+  uint64_t cycles = 0;
+  auto init_time = clock::now();;
+
+  while (true) {
     server.handleUpdate().spinOnce();
+
+    auto prev_time = clock::now();
+    auto tts = std::chrono::microseconds(++cycles*1000) - std::chrono::duration_cast<std::chrono::microseconds>(prev_time - init_time);
+
+    std::this_thread::sleep_for(tts);
+
+
+    if (std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - prev_time).count() > std::abs(1.1*tts.count())) {
+      std::cout << "Missed deadline by more than 10%, expected " << tts.count() << "us slept " << std::chrono::duration_cast<std::chrono::microseconds>(clock::now()-prev_time).count() << "us" << std::endl;
+    }
+
   }
+  //server.handleUpdate().spinOnce();
+  //// throwOnMotionError not triggered and go into control feedback loop
+  //LOG_INFO("    -- Start control callback loop");
+  //size_t count = 0;
+  //while (++count < kControlLoopCount) {
+  //  server.handleUpdate().spinOnce();
+  //}
   LOG_INFO("    -- Finish control callback loop");
 
   LOG_INFO("    -- Start robot.finishMotion");

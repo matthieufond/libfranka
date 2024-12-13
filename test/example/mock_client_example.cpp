@@ -65,8 +65,8 @@ int main(int argc, char* argv[]) {
     franka::Torques torques(tau_command);
     size_t count = 0;
     auto torque_control_cb = [&](const franka::RobotState&, franka::Duration) -> franka::Torques {
-      LOG_INFO("FrankaDriver::torque_control_cb");
-      if (++count < 5) {
+      //LOG_INFO("FrankaDriver::torque_control_cb");
+      if (++count > 0) {
         return torques;
       }
       return franka::MotionFinished(torques);

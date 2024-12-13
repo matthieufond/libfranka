@@ -119,6 +119,7 @@ void MockServer<C>::serverThread() {
 
   Poco::Net::DatagramSocket udp_socket({kHostname, 0});
   udp_socket.setBlocking(true);
+  udp_socket.setReceiveTimeout(Poco::Timespan(0, 1000));
   Socket udp_socket_wrapper;
   udp_socket_wrapper.sendBytes = [&](const void* data, size_t size) {
     //std::lock_guard<std::mutex> _(udp_mutex_);
@@ -127,8 +128,12 @@ void MockServer<C>::serverThread() {
   };
   udp_socket_wrapper.receiveBytes = [&](void* data, size_t size) {
     //std::lock_guard<std::mutex> _(udp_mutex_);
-    int rv = udp_socket.receiveFrom(data, size, remote_address);
-    ASSERT_EQ(static_cast<int>(size), rv) << "Receive error on UDP socket";
+    try {
+      int rv = udp_socket.receiveFrom(data, size, remote_address);
+      ASSERT_EQ(static_cast<int>(size), rv) << "Receive error on UDP socket";
+    } catch(const Poco::TimeoutException& exc) {
+      std::cout << "TImeout receiving command" << std::endl;
+    }
   };
 
   sendInitialState(udp_socket_wrapper);
