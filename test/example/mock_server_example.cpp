@@ -5,6 +5,7 @@
 
 #include <franka/robot_model.h>
 #include <magic_enum.hpp>
+#include <tracy/Tracy.hpp>
 #include "mock_server.h"
 
 /*
@@ -121,6 +122,7 @@ class AescapeMockServer : public MockServer<C> {
   AescapeMockServer& handleReadOnce() {
     MockServer<C>::template onSendUDP<r::RobotState>(
         [this](r::RobotState& robot_state) {
+          ZoneScopedN("SendState");
           std::lock_guard<std::mutex> state_lck(state_mut_);
           // Copy current state
           // Mode
@@ -139,6 +141,7 @@ class AescapeMockServer : public MockServer<C> {
   AescapeMockServer& handleUpdate() {
     handleReadOnce().spinOnce().onReceiveRobotCommand(
         [this](const r::RobotCommand& cmd) {
+          ZoneScopedN("OnReceiveRobotCommand");
           // TODO(matthieu): Handle timeout
           //LOG_INFO("    -- Received control robot command");
           std::lock_guard<std::mutex> state_lck(state_mut_);
@@ -146,6 +149,7 @@ class AescapeMockServer : public MockServer<C> {
             LOG_INFO("    -- Motion generation finished");
             modes_.motion_mode = r::MotionGeneratorMode::kIdle;
             modes_.ctrl_mode = r::ControllerMode::kOther;
+            stopped_ = true;
           } else {
             cmd_ = cmd;
             // Copy rest
@@ -161,6 +165,7 @@ class AescapeMockServer : public MockServer<C> {
   AescapeMockServer& waitForMove() {
     MockServer<C>::template waitForCommand<r::Move>(
         [this](const r::Move::Request& req) {
+          ZoneScopedN("WaitForCommand");
           std::lock_guard<std::mutex> state_lck(state_mut_);
           modes_.motion_mode = convertMode(req.motion_generator_mode);
           modes_.ctrl_mode = convertMode(req.controller_mode);
@@ -178,6 +183,7 @@ class AescapeMockServer : public MockServer<C> {
    * Respond to the move command with a success without waiting for a request
    */
   AescapeMockServer& respondMove() {
+    ZoneScoped;
     MockServer<C>::template sendResponse<r::Move>(move_id_, moveSuccessResp);
     return *this;
   }
@@ -190,6 +196,29 @@ class AescapeMockServer : public MockServer<C> {
     return *this;
   }
 
+  void stateLoop() {
+    using clock = std::chrono::steady_clock;
+    uint64_t cycles = 0;
+    auto init_time = clock::now();
+
+    while (!stopped_) {
+      ZoneScoped;
+      handleUpdate().spinOnce();
+
+      auto prev_time = clock::now();
+      auto tts = std::chrono::microseconds(++cycles*1000) - std::chrono::duration_cast<std::chrono::microseconds>(prev_time - init_time);
+
+      std::this_thread::sleep_for(tts);
+
+
+      if (std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - prev_time).count() > std::abs(1.2*tts.count())) {
+        std::cout << "Missed deadline by more than 20%, expected " << tts.count() << "us slept " << std::chrono::duration_cast<std::chrono::microseconds>(clock::now()-prev_time).count() << "us" << std::endl;
+      }
+
+    }
+
+  }
+
   ~AescapeMockServer() = default;
 
  private:
@@ -198,6 +227,7 @@ class AescapeMockServer : public MockServer<C> {
   uint32_t move_id_;
   r::RobotCommand cmd_;
   r::RobotState state_;
+  bool stopped_{false};
 };
 
 int main(int argc, char* argv[]) {
@@ -240,6 +270,7 @@ int main(int argc, char* argv[]) {
   // Test methods used in the controls repo
   server
       .waitForCommand<r::GetRobotModel>([](const typename r::GetRobotModel::Request& /*request*/) {
+        ZoneScopedN("LoadModelCommand");
         LOG_INFO("--- Receive load model request -> loadModel");
         LOG_INFO(" ++ GetRobotModel");
         const auto urdf_string = readFileToString(kUrdfPath);
@@ -248,6 +279,7 @@ int main(int argc, char* argv[]) {
       })
       .spinOnce()
       .generic([&buffer, &server](decltype(server)::Socket& tcp_socket, decltype(server)::Socket&) {
+        ZoneScopedN("LoadModelResponse");
         LOG_INFO(" ++ LoadModelLibrary");
         r::CommandHeader header;
         server.receiveRequest<r::LoadModelLibrary>(tcp_socket, &header);
@@ -262,23 +294,27 @@ int main(int argc, char* argv[]) {
       .spinOnce()
       .waitForCommand<r::AutomaticErrorRecovery>(
           [](const typename r::AutomaticErrorRecovery::Request&) {
+            ZoneScopedN("ErrorRecoveryCmd");
             LOG_INFO("--- Automatic Error Recovery");
             return r::AutomaticErrorRecovery::Response(r::AutomaticErrorRecovery::Status::kSuccess);
           })
       .spinOnce()
       .waitForCommand<r::SetCollisionBehavior>(
           [](const typename r::SetCollisionBehavior::Request&) {
+            ZoneScopedN("CollisonBehaviorCmd");
             LOG_INFO("--- SetCollisionBehavior");
             return r::SetCollisionBehavior::Response(r::SetCollisionBehavior::Status::kSuccess);
           })
       .spinOnce()
       .waitForCommand<r::SetJointImpedance>([](const typename r::SetJointImpedance::Request&) {
+        ZoneScopedN("JointImpedanceCmd");
         LOG_INFO("--- SetJointImpedance");
         return r::SetJointImpedance::Response(r::SetJointImpedance::Status::kSuccess);
       })
       .spinOnce()
       .waitForCommand<r::SetCartesianImpedance>(
           [](const typename r::SetCartesianImpedance::Request&) {
+            ZoneScopedN("CartesianImpedanceCmd");
             LOG_INFO("--- SetCartesianImpedance");
             return r::SetCartesianImpedance::Response(r::SetCartesianImpedance::Status::kSuccess);
           })
@@ -301,25 +337,8 @@ int main(int argc, char* argv[]) {
   LOG_INFO(" ++ operator()()");
 
   // Main Loop
+  server.stateLoop();
 
-  using clock = std::chrono::steady_clock;
-  uint64_t cycles = 0;
-  auto init_time = clock::now();;
-
-  while (true) {
-    server.handleUpdate().spinOnce();
-
-    auto prev_time = clock::now();
-    auto tts = std::chrono::microseconds(++cycles*1000) - std::chrono::duration_cast<std::chrono::microseconds>(prev_time - init_time);
-
-    std::this_thread::sleep_for(tts);
-
-
-    if (std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - prev_time).count() > std::abs(1.1*tts.count())) {
-      std::cout << "Missed deadline by more than 10%, expected " << tts.count() << "us slept " << std::chrono::duration_cast<std::chrono::microseconds>(clock::now()-prev_time).count() << "us" << std::endl;
-    }
-
-  }
   //server.handleUpdate().spinOnce();
   //// throwOnMotionError not triggered and go into control feedback loop
   //LOG_INFO("    -- Start control callback loop");

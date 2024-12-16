@@ -11,6 +11,7 @@ include(SetupGoogleTest)
 
 find_package(fmt REQUIRED)
 find_package(magic_enum REQUIRED)
+find_package(Tracy REQUIRED)
 
 foreach(lib ${GTEST_LIBRARIES})
   target_compile_options(${lib} PUBLIC -Wno-deprecated-copy)
@@ -28,6 +29,7 @@ set(TEST_DEPENDENCIES
   pinocchio::pinocchio
   fmt::fmt
   magic_enum::magic_enum
+  Tracy::TracyClient
 )
 set(TEST_INCLUDE_DIRECTORIES ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../src)
 
