@@ -30,6 +30,7 @@ using namespace std::string_literals;
 namespace r = research_interface::robot;
 using move_ctrl_mode_t = r::Move::ControllerMode;
 using move_motion_mode_t = r::Move::MotionGeneratorMode;
+using state_fn_t = std::function<r::RobotState(const r::RobotState&, const r::RobotCommand&)>;
 
 const std::string kUrdfPath = std::string(FRANKA_TEST_SOURCE_DIR) + "/fr3.urdf";
 constexpr size_t kControlLoopCount = 4;
@@ -111,10 +112,11 @@ template <typename C>
 class AescapeMockServer : public MockServer<C> {
  public:
   AescapeMockServer(
+      state_fn_t state_fn,
       typename MockServer<C>::ConnectCallbackT on_connect = MockServer<C>::ConnectCallbackT(),
       uint32_t sequence_number = 0,
       std::string ip = "127.0.0.1")
-      : MockServer<C>(on_connect, sequence_number, std::move(ip)) {}
+      : MockServer<C>(on_connect, sequence_number, std::move(ip)), state_fn_(state_fn) {}
 
   /*
    * Handle robot.readOnce() by responding with the robot state
@@ -123,7 +125,7 @@ class AescapeMockServer : public MockServer<C> {
     MockServer<C>::template onSendUDP<r::RobotState>(
         [this](r::RobotState& robot_state) {
           ZoneScopedN("SendState");
-          std::lock_guard<std::mutex> state_lck(state_mut_);
+          std::lock_guard<LockableBase(std::mutex)> lck(mut_);
           // Copy current state
           // Mode
           robot_state.robot_mode = modes_.robot_mode;
@@ -144,7 +146,7 @@ class AescapeMockServer : public MockServer<C> {
           ZoneScopedN("OnReceiveRobotCommand");
           // TODO(matthieu): Handle timeout
           //LOG_INFO("    -- Received control robot command");
-          std::lock_guard<std::mutex> state_lck(state_mut_);
+          std::lock_guard<LockableBase(std::mutex)> state_lck(mut_);
           if (cmd.motion.motion_generation_finished) {
             LOG_INFO("    -- Motion generation finished");
             modes_.motion_mode = r::MotionGeneratorMode::kIdle;
@@ -152,9 +154,11 @@ class AescapeMockServer : public MockServer<C> {
             stopped_ = true;
           } else {
             cmd_ = cmd;
+            new_cmd_ = true;
             // Copy rest
             // Process command. Probably notify some thread
           }
+          cv_.notify_all();
         });
     return *this;
   }
@@ -166,7 +170,7 @@ class AescapeMockServer : public MockServer<C> {
     MockServer<C>::template waitForCommand<r::Move>(
         [this](const r::Move::Request& req) {
           ZoneScopedN("WaitForCommand");
-          std::lock_guard<std::mutex> state_lck(state_mut_);
+          std::lock_guard<LockableBase(std::mutex)> state_lck(mut_);
           modes_.motion_mode = convertMode(req.motion_generator_mode);
           modes_.ctrl_mode = convertMode(req.controller_mode);
           modes_.robot_mode = r::RobotMode::kMove;
@@ -201,20 +205,51 @@ class AescapeMockServer : public MockServer<C> {
     uint64_t cycles = 0;
     auto init_time = clock::now();
 
+    std::unique_lock<LockableBase(std::mutex)> mut(mut_);
+
     while (!stopped_) {
       ZoneScoped;
+
+      mut.unlock();
+
+      auto deadline = std::chrono::microseconds(++cycles*1000) + init_time;
+
       handleUpdate().spinOnce();
 
+      // Wait until we receive a new command or timeout
+
+      mut.lock();
+
+      cv_.wait_until(mut, deadline, [this]{return new_cmd_;});
+
+      // Figure out how to cleanly handle late arriving commands
+      bool new_cmd = new_cmd_;
+      new_cmd_ = false;
+      r::RobotCommand cmd = cmd_;
+      r::RobotState curr_state = state_;
+      r::RobotState new_state = state_;
+      mut.unlock();
+
+      if (!new_cmd) {
+        // Do something if we didn't get a command a time
+      } else {
+        // Compute new state
+        new_state = state_fn_(curr_state, cmd);
+      }
+
+      // Sleep until appropriate to send the computed state
+
       auto prev_time = clock::now();
-      auto tts = std::chrono::microseconds(++cycles*1000) - std::chrono::duration_cast<std::chrono::microseconds>(prev_time - init_time);
+      auto tts = std::chrono::duration_cast<std::chrono::microseconds>(prev_time - deadline);
 
       std::this_thread::sleep_for(tts);
-
 
       if (std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - prev_time).count() > std::abs(1.2*tts.count())) {
         std::cout << "Missed deadline by more than 20%, expected " << tts.count() << "us slept " << std::chrono::duration_cast<std::chrono::microseconds>(clock::now()-prev_time).count() << "us" << std::endl;
       }
 
+      mut.lock();
+      state_ = new_state;
     }
 
   }
@@ -222,11 +257,15 @@ class AescapeMockServer : public MockServer<C> {
   ~AescapeMockServer() = default;
 
  private:
-  std::mutex state_mut_;
+  std::chrono::microseconds rate_;
+  state_fn_t state_fn_;
+  TracyLockable(std::mutex, mut_);
+  std::condition_variable_any cv_;
   Modes modes_;
   uint32_t move_id_;
   r::RobotCommand cmd_;
   r::RobotState state_;
+  bool new_cmd_{false};
   bool stopped_{false};
 };
 
@@ -248,7 +287,11 @@ int main(int argc, char* argv[]) {
     return RobotTypes::Connect::Response(RobotTypes::Connect::Status::kSuccess);
   };
 
-  AescapeMockServer<RobotTypes> server(on_conn, 0, std::string(argv[1]));
+  AescapeMockServer<RobotTypes> server(
+    [](const r::RobotState& curr_state, const r::RobotCommand& cmd){ return curr_state;},
+    on_conn,
+    0,
+    std::string(argv[1]));
 
   std::unique_lock<std::mutex> lck(mut);
   while (!connected) {
