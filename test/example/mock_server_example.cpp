@@ -2,11 +2,13 @@
 #include <fstream>
 #include <iostream>
 #include <mutex>
+#include <boost/accumulators/accumulators.hpp>
+#include <boost/accumulators/statistics/tail_quantile.hpp>
+#include <boost/accumulators/statistics.hpp>
 
 #include <franka/robot_model.h>
 #include <magic_enum.hpp>
 #include "mock_server.h"
-
 /*
  * Mock Server Example
  * This example demonstrates how to use the MockServer class and respond to different commands
@@ -25,6 +27,9 @@ void logMessage(const char* filename,
             << fmt::format(format_str, std::forward<T>(args)...) << std::endl;
 }
 
+
+using clock = std::chrono::steady_clock;
+namespace bacc = boost::accumulators;
 using namespace std::string_literals;
 namespace r = research_interface::robot;
 using move_ctrl_mode_t = r::Move::ControllerMode;
@@ -148,6 +153,7 @@ class AescapeMockServer : public MockServer<C> {
             modes_.ctrl_mode = r::ControllerMode::kOther;
           } else {
             cmd_ = cmd;
+            cmd_rcv_dt_acc_(std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - prev_cmd_rcv_us));
             // Copy rest
             // Process command. Probably notify some thread
           }
@@ -198,6 +204,12 @@ class AescapeMockServer : public MockServer<C> {
   uint32_t move_id_;
   r::RobotCommand cmd_;
   r::RobotState state_;
+  // Timing
+  using accum_t = bacc::accumulator_set<double, bacc::features<bacc::tag::mean, bacc::tag::median, bacc::tag::tail_quantile<right>>; 
+  std::chrono::steady_clock::time_point prev_cmd_rcv_us_;
+  accum_t cmd_rcv_dt_acc_;
+  std::chrono::steady_clock::time_point prev_state_snd_us_;
+  accum_t state_snd_dt_acc_;
 };
 
 int main(int argc, char* argv[]) {
@@ -302,7 +314,6 @@ int main(int argc, char* argv[]) {
 
   // Main Loop
 
-  using clock = std::chrono::steady_clock;
   uint64_t cycles = 0;
   auto init_time = clock::now();;
 
