@@ -240,7 +240,7 @@ class AescapeMockServer : public MockServer<C> {
       // Sleep until appropriate to send the computed state
 
       auto prev_time = clock::now();
-      auto tts = std::chrono::duration_cast<std::chrono::microseconds>(prev_time - deadline);
+      auto tts = std::chrono::duration_cast<std::chrono::microseconds>(deadline - prev_time);
 
       std::this_thread::sleep_for(tts);
 
