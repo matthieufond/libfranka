@@ -220,7 +220,10 @@ class AescapeMockServer : public MockServer<C> {
 
       mut.lock();
 
-      cv_.wait_until(mut, deadline, [this]{return new_cmd_;});
+      {
+        ZoneScopedN("Wait for command");
+        cv_.wait_until(mut, deadline, [this]{return new_cmd_;});
+      }
 
       // Figure out how to cleanly handle late arriving commands
       bool new_cmd = new_cmd_;
@@ -265,6 +268,7 @@ class AescapeMockServer : public MockServer<C> {
   uint32_t move_id_;
   r::RobotCommand cmd_;
   r::RobotState state_;
+  // We should rely on some sequence number instead of a flag here
   bool new_cmd_{false};
   bool stopped_{false};
 };
