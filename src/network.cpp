@@ -14,6 +14,8 @@ Network::Network(const std::string& franka_address,
                  std::chrono::milliseconds tcp_timeout,
                  std::chrono::milliseconds udp_timeout,
                  std::tuple<bool, int, int, int> tcp_keepalive) {
+  ZoneScoped;
+
   try {
     Poco::Timespan poco_timeout(1000l * tcp_timeout.count());
     Poco::Net::SocketAddress address(franka_address, franka_port);
@@ -61,6 +63,8 @@ uint16_t Network::udpPort() const noexcept {
 }
 
 void Network::tcpThrowIfConnectionClosed() try {
+  ZoneScoped;
+
   std::unique_lock<std::mutex> lock(tcp_mutex_, std::try_to_lock);
   if (!lock.owns_lock()) {
     return;

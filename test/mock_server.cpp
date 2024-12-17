@@ -46,6 +46,8 @@ MockServer<C>::~MockServer() {
 template <typename C>
 MockServer<C>& MockServer<C>::onReceiveRobotCommand(
     ReceiveRobotCommandCallbackT on_receive_robot_command) {
+  ZoneScoped;
+
   std::lock_guard<LockableBase(std::mutex)> _(command_mutex_);
   commands_.emplace_back("onReceiveRobotCommand", [=](Socket&, Socket& udp_socket) {
     research_interface::robot::RobotCommand robot_command;
@@ -59,6 +61,8 @@ MockServer<C>& MockServer<C>::onReceiveRobotCommand(
 
 template <typename C>
 MockServer<C>& MockServer<C>::spinOnce() {
+  ZoneScoped;
+
   std::unique_lock<LockableBase(std::mutex)> lock(command_mutex_);
   continue_ = true;
   cv_.notify_one();
@@ -139,6 +143,8 @@ void MockServer<C>::serverThread() {
   sendInitialState(udp_socket_wrapper);
 
   while (!shutdown_) {
+    ZoneScopedN("server_loop");
+
     cv_.wait(lock, [this] { return continue_ || shutdown_; });
     while (!commands_.empty()) {
       auto callback = commands_.front().second;
@@ -170,6 +176,8 @@ void MockServer<C>::serverThread() {
 template <typename C>
 MockServer<C>& MockServer<C>::generic(
     std::function<void(MockServer<C>::Socket&, MockServer<C>::Socket&)> generic_command) {
+  ZoneScoped;
+
   std::lock_guard<LockableBase(std::mutex)> _(command_mutex_);
   commands_.emplace_back("generic", generic_command);
   return *this;
@@ -180,6 +188,8 @@ void MockServer<C>::sendInitialState(Socket&) {}
 
 template <>
 void MockServer<RobotTypes>::sendInitialState(Socket& udp_socket) {
+  ZoneScoped;
+
   research_interface::robot::RobotState state{};
   state.message_id = ++sequence_number_;
   udp_socket.sendBytes(&state, sizeof(state));
@@ -187,6 +197,8 @@ void MockServer<RobotTypes>::sendInitialState(Socket& udp_socket) {
 
 template <typename C>
 MockServer<C>& MockServer<C>::doForever(std::function<bool()> callback) {
+  ZoneScoped;
+
   std::lock_guard<LockableBase(std::mutex)> _(command_mutex_);
   return doForever(callback, commands_.end());
 }
@@ -194,6 +206,8 @@ MockServer<C>& MockServer<C>::doForever(std::function<bool()> callback) {
 template <typename C>
 MockServer<C>& MockServer<C>::doForever(std::function<bool()> callback,
                                         typename decltype(MockServer::commands_)::iterator it) {
+  ZoneScoped;
+
   auto callback_wrapper = [=](Socket&, Socket&) {
     std::unique_lock<LockableBase(std::mutex)> lock(command_mutex_);
     if (shutdown_) {

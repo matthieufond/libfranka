@@ -47,6 +47,7 @@ int main(int argc, char* argv[]) {
 
   LOG_INFO("Starting server on port: {}", argv[1]);
   auto on_conn = [&connected, &cv, &mut](const RobotTypes::Connect::Request& req) {
+    ZoneScoped;
     LOG_INFO("Connected! port: {}", req.udp_port);
     std::unique_lock<std::mutex> lck(mut);
     connected = true;

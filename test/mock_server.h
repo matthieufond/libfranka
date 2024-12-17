@@ -137,6 +137,8 @@ template <typename C>
 template <typename T>
 MockServer<C>& MockServer<C>::sendResponse(const uint32_t& command_id,
                                            std::function<typename T::Response()> create_response) {
+  ZoneScoped;
+
   using namespace std::string_literals;
 
   std::lock_guard<LockableBase(std::mutex)> _(command_mutex_);
@@ -157,6 +159,8 @@ template <typename C>
 template <typename T>
 MockServer<C>& MockServer<C>::queueResponse(const uint32_t& command_id,
                                             std::function<typename T::Response()> create_response) {
+  ZoneScoped;
+
   using namespace std::string_literals;
 
   std::lock_guard<LockableBase(std::mutex)> _(command_mutex_);
@@ -175,6 +179,8 @@ MockServer<C>& MockServer<C>::queueResponse(const uint32_t& command_id,
 template <typename C>
 template <typename T>
 MockServer<C>& MockServer<C>::sendEmptyState() {
+  ZoneScoped;
+
   return onSendUDP<T>([=](T& state) { state.message_id = ++sequence_number_; });
 }
 
@@ -182,6 +188,8 @@ template <typename C>
 template <typename T>
 MockServer<C>& MockServer<C>::sendRandomState(std::function<void(T&)> random_generator,
                                               T* sent_state) {
+  ZoneScoped;
+
   return onSendUDP<T>([=](T& state) {
     random_generator(state);
     state.message_id = ++sequence_number_;
@@ -194,6 +202,8 @@ MockServer<C>& MockServer<C>::sendRandomState(std::function<void(T&)> random_gen
 template <typename C>
 template <typename T>
 MockServer<C>& MockServer<C>::onSendUDP(std::function<T()> on_send_udp) {
+  ZoneScoped;
+
   std::lock_guard<LockableBase(std::mutex)> _(command_mutex_);
   commands_.emplace_back("onSendUDP", [=](Socket&, Socket& udp_socket) {
     T state = on_send_udp();
@@ -206,6 +216,8 @@ MockServer<C>& MockServer<C>::onSendUDP(std::function<T()> on_send_udp) {
 template <typename C>
 template <typename T>
 MockServer<C>& MockServer<C>::onSendUDP(std::function<void(T&)> on_send_udp) {
+  ZoneScopedN("onSendUDP_2");
+
   return onSendUDP<T>([=]() {
     T state{};
     state.message_id = ++sequence_number_;
@@ -220,6 +232,8 @@ template <typename C>
 template <typename T>
 typename T::Request MockServer<C>::receiveRequest(Socket& tcp_socket,
                                                   typename T::Header* header_ptr) {
+  ZoneScoped;
+
   typename T::template Message<typename T::Request> request_message;
   if constexpr (std::is_same<research_interface::robot::GetRobotModel, T>::value) {
     tcp_socket.receiveBytes(&request_message.header, sizeof(request_message.header));
@@ -237,6 +251,8 @@ template <typename T>
 void MockServer<C>::sendResponse(Socket& tcp_socket,
                                  const typename T::Header& header,
                                  const typename T::Response& response) {
+  ZoneScoped;
+
   typename T::template Message<typename T::Response> response_message(header, response);
   tcp_socket.sendBytes(&response_message, sizeof(response_message));
 }
@@ -247,6 +263,8 @@ inline void MockServer<RobotTypes>::sendResponse<research_interface::robot::GetR
     Socket& tcp_socket,
     const research_interface::robot::GetRobotModel::Header& header,
     const research_interface::robot::GetRobotModel::Response& response) {
+  ZoneScoped;
+
   research_interface::robot::GetRobotModel::Message<
       research_interface::robot::GetRobotModel::Response>
       response_message(header, response);
@@ -260,6 +278,8 @@ void MockServer<C>::handleCommand(
     Socket& tcp_socket,
     std::function<typename T::Response(const typename T::Request&)> callback,
     uint32_t* command_id) {
+  ZoneScoped;
+
   typename T::Header header;
   typename T::Request request = receiveRequest<T>(tcp_socket, &header);
   if (command_id != nullptr) {
@@ -276,6 +296,8 @@ template <typename T>
 MockServer<C>& MockServer<C>::waitForCommand(
     std::function<typename T::Response(const typename T::Request&)> callback,
     uint32_t* command_id) {
+  ZoneScoped;
+
   using namespace std::string_literals;
 
   std::lock_guard<LockableBase(std::mutex)> _(command_mutex_);

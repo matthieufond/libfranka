@@ -9,6 +9,8 @@
 #include <fstream>
 #include <iostream>
 
+#include <tracy/Tracy.hpp>
+
 #include <franka/control_tools.h>
 #include <franka/control_types.h>
 #include <franka/exception.h>
@@ -56,6 +58,8 @@ ControlLoop<T>::ControlLoop(RobotControl& robot,
                   std::move(control_callback),
                   limit_rate,
                   cutoff_frequency) {
+  ZoneScoped;
+
   if (!control_callback_) {
     throw std::invalid_argument("libfranka: Invalid control callback given.");
   }
@@ -75,6 +79,8 @@ ControlLoop<T>::ControlLoop(RobotControl& robot,
                             bool limit_rate,
                             double cutoff_frequency)
     : ControlLoop(robot, std::move(motion_callback), {}, limit_rate, cutoff_frequency) {
+  ZoneScoped;
+
   if (!motion_callback_) {
     throw std::invalid_argument("libfranka: Invalid motion callback given.");
   }
@@ -95,6 +101,8 @@ ControlLoop<T>::ControlLoop(RobotControl& robot,
 
 template <typename T>
 void ControlLoop<T>::operator()() try {
+  ZoneScoped;
+
   RobotState robot_state = robot_.update(nullptr, nullptr);
   robot_.throwOnMotionError(robot_state, motion_id_);
 
@@ -131,6 +139,8 @@ template <typename T>
 bool ControlLoop<T>::spinControl(const RobotState& robot_state,
                                  franka::Duration time_step,
                                  research_interface::robot::ControllerCommand* command) {
+  ZoneScoped;
+
   Torques control_output = control_callback_(robot_state, time_step);
   if (cutoff_frequency_ < kMaxCutoffFrequency) {
     for (size_t i = 0; i < 7; i++) {
@@ -150,6 +160,8 @@ template <typename T>
 bool ControlLoop<T>::spinMotion(const RobotState& robot_state,
                                 franka::Duration time_step,
                                 research_interface::robot::MotionGeneratorCommand* command) {
+  ZoneScoped;
+
   T motion_output = motion_callback_(robot_state, time_step);
   convertMotion(motion_output, robot_state, command);
   return !motion_output.motion_finished;
@@ -160,6 +172,8 @@ void ControlLoop<JointPositions>::convertMotion(
     const JointPositions& motion,
     const RobotState& robot_state,
     research_interface::robot::MotionGeneratorCommand* command) {
+  ZoneScoped;
+
   command->q_c = motion.q;
   if (cutoff_frequency_ < kMaxCutoffFrequency) {
     for (size_t i = 0; i < 7; i++) {
@@ -181,6 +195,8 @@ void ControlLoop<JointVelocities>::convertMotion(
     const JointVelocities& motion,
     const RobotState& robot_state,
     research_interface::robot::MotionGeneratorCommand* command) {
+  ZoneScoped;
+
   command->dq_c = motion.dq;
   if (cutoff_frequency_ < kMaxCutoffFrequency) {
     for (size_t i = 0; i < 7; i++) {
@@ -202,6 +218,8 @@ void ControlLoop<CartesianPose>::convertMotion(
     const CartesianPose& motion,
     const RobotState& robot_state,
     research_interface::robot::MotionGeneratorCommand* command) {
+  ZoneScoped;
+
   command->O_T_EE_c = motion.O_T_EE;
   if (cutoff_frequency_ < kMaxCutoffFrequency) {
     command->O_T_EE_c =
@@ -240,6 +258,8 @@ void ControlLoop<CartesianVelocities>::convertMotion(
     const CartesianVelocities& motion,
     const RobotState& robot_state,
     research_interface::robot::MotionGeneratorCommand* command) {
+  ZoneScoped;
+
   command->O_dP_EE_c = motion.O_dP_EE;
   if (cutoff_frequency_ < kMaxCutoffFrequency) {
     for (size_t i = 0; i < 6; i++) {

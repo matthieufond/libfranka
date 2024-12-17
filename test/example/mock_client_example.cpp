@@ -3,6 +3,7 @@
 #include <franka/model.h>
 #include <franka/robot.h>
 #include <iostream>
+#include <tracy/Tracy.hpp>
 
 /*
  * This is a minimal client example to test the mock server example.
@@ -36,8 +37,11 @@ int main(int argc, char* argv[]) {
     auto robot = std::make_shared<franka::Robot>(robotip, real_time_config);
     LOG_INFO("Create franka robot");
 
-    auto model = std::make_shared<franka::Model>(robot->loadModel());
-    LOG_INFO("Create franka model");
+    {
+      ZoneScopedN("CreateModel");
+      auto model = std::make_shared<franka::Model>(robot->loadModel());
+      LOG_INFO("Create franka model");
+    }
 
     robot->automaticErrorRecovery();
     LOG_INFO("automaticErrorRecovery");
@@ -65,6 +69,7 @@ int main(int argc, char* argv[]) {
     franka::Torques torques(tau_command);
     size_t count = 0;
     auto torque_control_cb = [&](const franka::RobotState&, franka::Duration) -> franka::Torques {
+      ZoneScopedN("torque_control_cb");
       //LOG_INFO("FrankaDriver::torque_control_cb");
       if (++count > 0) {
         return torques;
