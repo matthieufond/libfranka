@@ -80,13 +80,30 @@ target_link_libraries(run_all_tests PUBLIC ${TEST_DEPENDENCIES})
 
 add_test(Default run_all_tests --gtest_output=xml:${TEST_OUTPUT_DIR}/default.xml)
 
+## Aescape Backend Library
+add_library(aescape_backend SHARED
+  backend/forward_dynamics.h
+  backend/forward_dynamics.cpp
+  backend/backend_interface.h
+  backend/forward_dynamics_backend.h
+  backend/forward_dynamics_backend.cpp
+)
+target_link_libraries(aescape_backend PUBLIC ${TEST_DEPENDENCIES})
+
+add_executable(forward_dynamics_tests
+backend/forward_dynamics_tests.cpp
+)
+target_link_libraries(forward_dynamics_tests PRIVATE ${TEST_DEPENDENCIES} aescape_backend)
+target_compile_definitions(forward_dynamics_tests PRIVATE ${TEST_COMPILE_DEFINITIONS})
+add_test(forward_dynamics_tests forward_dynamics_tests --gtest_output=xml:${TEST_OUTPUT_DIR}/default.xml)
+
 add_executable(franka_mock_server_example
   example/mock_server_example.cpp
   mock_server.cpp
   helpers.cpp
 )
 target_include_directories(franka_mock_server_example PRIVATE ${TEST_INCLUDE_DIRECTORIES})
-target_link_libraries(franka_mock_server_example PRIVATE ${TEST_DEPENDENCIES})
+target_link_libraries(franka_mock_server_example PRIVATE ${TEST_DEPENDENCIES} aescape_backend)
 target_compile_definitions(franka_mock_server_example PRIVATE ${TEST_COMPILE_DEFINITIONS})
 
 add_executable(franka_mock_client_example

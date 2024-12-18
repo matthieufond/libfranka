@@ -1,8 +1,7 @@
-#include <fmt/core.h>
 #include <fstream>
-#include <iostream>
 #include <mutex>
 
+#include <backend/forward_dynamics_backend.h>
 #include <franka/robot_model.h>
 #include "aescape_mock_server.h"
 #include <magic_enum.hpp>
@@ -33,9 +32,6 @@ std::string readFileToString(const std::string& filename) {
   return oss.str();
 }
 
-/*
- * Struct to hold the modes of the robot
- */
 int main(int argc, char* argv[]) {
   if (argc < 2) {
     LOG_INFO("Usage: {} <server_ip>\nUse 127.0.0.1 if unsure.", argv[0]);
@@ -55,12 +51,8 @@ int main(int argc, char* argv[]) {
     return RobotTypes::Connect::Response(RobotTypes::Connect::Status::kSuccess);
   };
 
-  AescapeMockServer<RobotTypes> server(
-    std::make_shared<DummyBackend>(),
-    1000,
-    on_conn,
-    0,
-    std::string(argv[1]));
+  AescapeMockServer<RobotTypes> server(std::make_shared<aescape::ForwardDynamicsBackend>(kUrdfPath),
+                                       1000, on_conn, 0, std::string(argv[1]));
 
   std::unique_lock<std::mutex> lck(mut);
   while (!connected) {

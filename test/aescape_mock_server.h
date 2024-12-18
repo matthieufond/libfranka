@@ -1,7 +1,9 @@
 #include "mock_server.h"
 #include "helpers.h"
 #include <robot_impl.h>
+#include "logging_macros.h"
 
+#include <backend/forward_dynamics_backend.h>
 #include <magic_enum.hpp>
 #include <pinocchio/algorithm/compute-all-terms.hpp>
 #include <pinocchio/algorithm/crba.hpp>
@@ -14,16 +16,6 @@
  * This example demonstrates how to use the MockServer class and respond to different commands
  * from the franka::robot class.
  */
-#define LOG_INFO(str, ...) logMessage(__FILE__, __LINE__, "INFO", str, ##__VA_ARGS__)
-template <typename... T>
-void logMessage(const char* filename,
-                int line,
-                const char* level,
-                const std::string& format_str,
-                T&&... args) {
-  std::cout << fmt::format("[{}][{}]{}:{}: ", level, std::chrono::steady_clock::now().time_since_epoch().count(), filename, line)
-            << fmt::format(format_str, std::forward<T>(args)...) << std::endl;
-}
 
 using namespace std::string_literals;
 namespace r = research_interface::robot;
@@ -100,7 +92,7 @@ template <typename C>
 class AescapeMockServer : public MockServer<C> {
  public:
   AescapeMockServer(
-      std::shared_ptr<Backend> robot_backend,
+      std::shared_ptr<aescape::BackendInterface> robot_backend,
       double state_send_rate_hz,
       typename MockServer<C>::ConnectCallbackT on_connect = MockServer<C>::ConnectCallbackT(),
       uint32_t sequence_number = 0,
@@ -261,7 +253,7 @@ class AescapeMockServer : public MockServer<C> {
   ~AescapeMockServer() = default;
 
  private:
-  std::shared_ptr<Backend> robot_backend_;
+  std::shared_ptr<aescape::BackendInterface> robot_backend_;
   double state_send_rate_hz_;
   std::mutex mut_;
   std::condition_variable cv_;

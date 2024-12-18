@@ -1,0 +1,63 @@
+#include "forward_dynamics.h"
+
+#include <pinocchio/algorithm/aba.hpp>
+#include <pinocchio/algorithm/crba.hpp>
+#include <pinocchio/algorithm/joint-configuration.hpp>
+
+namespace aescape {
+
+RobotState updateRobotStateABA(const pinocchio::Model& model,
+                               const RobotState& prev_robot_state,
+                               const Eigen::VectorXd& tau,
+                               double dt) {
+  assert(tau.size() == kNumJoints);
+  assert(prev_robot_state.q.size() == kNumJoints);
+  assert(prev_robot_state.dq.size() == kNumJoints);
+  assert(prev_robot_state.ddq.size() == kNumJoints);
+
+  pinocchio::Data data(model);
+  const auto Minv = pinocchio::computeMinverse(model, data, prev_robot_state.q);
+
+  RobotState new_robot_state;
+  new_robot_state.tau = tau;
+  new_robot_state.ddq = Minv * (tau);
+  new_robot_state.dq = prev_robot_state.dq + new_robot_state.ddq * dt;
+  new_robot_state.q = pinocchio::integrate(model, prev_robot_state.q, new_robot_state.dq);
+  return new_robot_state;
+}
+
+RobotState updateRobotStateCRBA(const pinocchio::Model& model,
+                                const RobotState& prev_robot_state,
+                                const Eigen::VectorXd& tau,
+                                double dt) {
+  assert(tau.size() == kNumJoints);
+  assert(prev_robot_state.q.size() == kNumJoints);
+  assert(prev_robot_state.dq.size() == kNumJoints);
+  assert(prev_robot_state.ddq.size() == kNumJoints);
+
+  pinocchio::Data data(model);
+  const auto M = pinocchio::crba(model, data, prev_robot_state.q);
+
+  RobotState new_robot_state;
+  new_robot_state.tau = tau;
+  new_robot_state.ddq = M.inverse() * (tau);
+  new_robot_state.dq = prev_robot_state.dq + new_robot_state.ddq * dt;
+  new_robot_state.q = pinocchio::integrate(model, prev_robot_state.q, new_robot_state.dq);
+  return new_robot_state;
+}
+
+RobotState updateRobotState(const pinocchio::Model& model,
+                            const RobotState& prev_robot_state,
+                            const Eigen::VectorXd& tau,
+                            double dt,
+                            InertiaMatrixMethod method) {
+  RobotState new_robot_state;
+  if (method == InertiaMatrixMethod::kCRBA) {
+    new_robot_state = updateRobotStateCRBA(model, prev_robot_state, tau, dt);
+  } else if (method == InertiaMatrixMethod::kABA) {
+    new_robot_state = updateRobotStateABA(model, prev_robot_state, tau, dt);
+  }
+  return new_robot_state;
+}
+
+}  // namespace aescape
