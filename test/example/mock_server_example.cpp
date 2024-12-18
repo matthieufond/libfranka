@@ -4,7 +4,7 @@
 #include <mutex>
 
 #include <franka/robot_model.h>
-#include "aescape_mock_server.hpp"
+#include "aescape_mock_server.h"
 #include <magic_enum.hpp>
 #include <tracy/Tracy.hpp>
 

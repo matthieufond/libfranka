@@ -1,6 +1,8 @@
-#include <magic_enum.hpp>
 #include "mock_server.h"
+#include "helpers.h"
+#include <robot_impl.h>
 
+#include <magic_enum.hpp>
 #include <pinocchio/algorithm/compute-all-terms.hpp>
 #include <pinocchio/algorithm/crba.hpp>
 #include <pinocchio/algorithm/joint-configuration.hpp>
@@ -79,18 +81,6 @@ r::Move::Response moveSuccessResp() {
 
 constexpr int kNumJoints = 7;
 
-struct AescapeRobotState{
-  r::ControllerMode controller_mode{r::ControllerMode::kOther};
-  r::MotionGeneratorMode motion_generator_mode{r::MotionGeneratorMode::kIdle};
-  r::RobotMode robot_mode{r::RobotMode::kIdle};
-  Eigen::VectorXd q{Eigen::VectorXd::Zero(kNumJoints)};    // joint positions
-  Eigen::VectorXd dq{Eigen::VectorXd::Zero(kNumJoints)};   // joint velocities
-  Eigen::VectorXd ddq{Eigen::VectorXd::Zero(kNumJoints)};  // joint accelerations
-  Eigen::VectorXd tau{Eigen::VectorXd::Zero(kNumJoints)};  // joint torques
-};
-
-using AescapeRobotCommand = r::RobotCommand;
-
 class Backend {
 public:
     virtual void updateRobotState(r::RobotState& state) = 0;
@@ -115,7 +105,9 @@ class AescapeMockServer : public MockServer<C> {
       typename MockServer<C>::ConnectCallbackT on_connect = MockServer<C>::ConnectCallbackT(),
       uint32_t sequence_number = 0,
       std::string ip = "127.0.0.1")
-      : MockServer<C>(on_connect, sequence_number, std::move(ip)), robot_backend_(robot_backend), state_send_rate_hz_(state_send_rate_hz)  {}
+      : MockServer<C>(on_connect, sequence_number, std::move(ip)), robot_backend_(robot_backend), state_send_rate_hz_(state_send_rate_hz)  {
+        testRobotStateIsZero(franka::convertRobotState(state_));
+      }
 
   /*
    * Handle robot.readOnce() by responding with the robot state
@@ -126,7 +118,7 @@ class AescapeMockServer : public MockServer<C> {
     MockServer<C>::template onSendUDP<r::RobotState>(
         [this](r::RobotState& robot_state) {
           ZoneScopedN("SendState");
-          std::lock_guard<LockableBase(std::mutex)> lck(mut_);
+          std::lock_guard<std::mutex> lck(mut_);
           // Set server local state_.message_id to the server's sequence number (which is what is being sent to client)
           // the message_id is set from the sequence number in onSendUDP()
           state_.message_id = robot_state.message_id;
@@ -150,7 +142,7 @@ class AescapeMockServer : public MockServer<C> {
           ZoneScopedN("OnReceiveRobotCommand");
           // TODO(matthieu): Handle timeout
           //LOG_INFO("    -- Received control robot command");
-          std::lock_guard<LockableBase(std::mutex)> state_lck(mut_);
+          std::lock_guard<std::mutex> state_lck(mut_);
           if (cmd.motion.motion_generation_finished) {
             LOG_INFO("    -- Motion generation finished");
             modes_.motion_mode = r::MotionGeneratorMode::kIdle;
@@ -174,7 +166,7 @@ class AescapeMockServer : public MockServer<C> {
     MockServer<C>::template waitForCommand<r::Move>(
         [&](const r::Move::Request& req) {
           ZoneScopedN("WaitForMove");
-          std::lock_guard<LockableBase(std::mutex)> state_lck(mut_);
+          std::lock_guard<std::mutex> state_lck(mut_);
           modes_.motion_mode = convertMode(req.motion_generator_mode);
           modes_.ctrl_mode = convertMode(req.controller_mode);
           modes_.robot_mode = r::RobotMode::kMove;
@@ -214,7 +206,7 @@ class AescapeMockServer : public MockServer<C> {
     uint64_t dt_us = 1e6 / state_send_rate_hz_;
     //state_.message_id = MockServer<C>::sequenceNumber() + 1;
 
-    std::unique_lock<LockableBase(std::mutex)> mut(mut_);
+    std::unique_lock<std::mutex> mut(mut_);
 
 
     while (!stopped_) {
@@ -271,12 +263,12 @@ class AescapeMockServer : public MockServer<C> {
  private:
   std::shared_ptr<Backend> robot_backend_;
   double state_send_rate_hz_;
-  TracyLockable(std::mutex, mut_);
-  std::condition_variable_any cv_;
-  Modes modes_;
+  std::mutex mut_;
+  std::condition_variable cv_;
+  Modes modes_{};
   uint32_t move_id_;
-  r::RobotCommand cmd_;
-  r::RobotState state_;
+  r::RobotCommand cmd_{};
+  r::RobotState state_{};
   bool stopped_{false};
 };
 

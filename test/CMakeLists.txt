@@ -83,13 +83,16 @@ add_test(Default run_all_tests --gtest_output=xml:${TEST_OUTPUT_DIR}/default.xml
 add_executable(franka_mock_server_example
   example/mock_server_example.cpp
   mock_server.cpp
+  helpers.cpp
 )
+target_include_directories(franka_mock_server_example PRIVATE ${TEST_INCLUDE_DIRECTORIES})
 target_link_libraries(franka_mock_server_example PRIVATE ${TEST_DEPENDENCIES})
 target_compile_definitions(franka_mock_server_example PRIVATE ${TEST_COMPILE_DEFINITIONS})
 
 add_executable(franka_mock_client_example
   example/mock_client_example.cpp
 )
+target_include_directories(franka_mock_client_example PRIVATE ${TEST_INCLUDE_DIRECTORIES})
 target_link_libraries(franka_mock_client_example PRIVATE ${TEST_DEPENDENCIES})
 target_compile_definitions(franka_mock_client_example PRIVATE ${TEST_COMPILE_DEFINITIONS})
 
