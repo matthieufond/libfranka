@@ -3,6 +3,8 @@
 #include "robot_impl.h"
 
 #include <sstream>
+#include <iostream>
+#include <magic_enum.hpp>
 
 #include <franka/control_tools.h>
 
@@ -63,9 +65,11 @@ RobotState Robot::Impl::update(
   ZoneScoped;
 
   network_->tcpThrowIfConnectionClosed();
-
+  std::cout << "Sending robot command in Update" << __FILE__ << __LINE__ << std::endl;
   research_interface::robot::RobotCommand robot_command =
       sendRobotCommand(motion_command, control_command);
+
+  std::cout << "Waiting for robot state" << __FILE__ << __LINE__ << std::endl;
 
   RobotState state = convertRobotState(receiveRobotState());
   logger_.log(state, robot_command);
@@ -79,6 +83,11 @@ void Robot::Impl::throwOnMotionError(const RobotState& robot_state, uint32_t mot
   if (robot_state.robot_mode != RobotMode::kMove ||
       motion_generator_mode_ != current_move_motion_generator_mode_ ||
       controller_mode_ != current_move_controller_mode_) {
+    std::cout << "robot_state.robot_mode:" << magic_enum::enum_name(robot_state.robot_mode) << "RobotMode::kMove:" << magic_enum::enum_name(RobotMode::kMove) <<  __FILE__ << __LINE__ << std::endl;
+    std::cout << "motion_generator_mode_:" << magic_enum::enum_name(motion_generator_mode_) << "current_move_motion_generator_mode_:" << magic_enum::enum_name(current_move_motion_generator_mode_) <<  __FILE__ << __LINE__ << std::endl;
+    std::cout << "controller_mode_:" << magic_enum::enum_name(controller_mode_) << "current_move_controller_mode_:" << magic_enum::enum_name(current_move_controller_mode_) <<  __FILE__ << __LINE__ << std::endl;
+    std::cout << "throwOnMotionError: blocking tcp response for Move" << __FILE__ << __LINE__ << std::endl;
+    
     // We detect a move error by changes in the robot state and we will receive a TCP response to
     // the Move command.
     auto response =
@@ -91,6 +100,7 @@ void Robot::Impl::throwOnMotionError(const RobotState& robot_state, uint32_t mot
     }
     throw ProtocolException("Unexpected reply to a Move command");
   }
+  std::cout << "throwOnMotionError done" << __FILE__ << __LINE__ << std::endl;
 }
 
 RobotState Robot::Impl::readOnce() {
@@ -141,7 +151,7 @@ research_interface::robot::RobotCommand Robot::Impl::sendRobotCommand(
     const research_interface::robot::MotionGeneratorCommand* motion_command,
     const research_interface::robot::ControllerCommand* control_command) const {
   ZoneScoped;
-
+  std::cout<< "Start sendRobotCommand" << __FILE__ << __LINE__ << std::endl;
   research_interface::robot::RobotCommand robot_command{};
   if (motion_command != nullptr || control_command != nullptr) {
     robot_command.message_id = message_id_;
@@ -153,6 +163,8 @@ research_interface::robot::RobotCommand Robot::Impl::sendRobotCommand(
       }
       robot_command.motion = *motion_command;
     }
+    std::cout<< "Set robot_command.motion" << __FILE__ << __LINE__ << std::endl;
+
     if (control_command != nullptr) {
       if (current_move_controller_mode_ !=
           research_interface::robot::ControllerMode::kExternalController) {
@@ -160,6 +172,10 @@ research_interface::robot::RobotCommand Robot::Impl::sendRobotCommand(
             "libfranka robot: Trying to send control command, but no controller running!");
       }
       robot_command.control = *control_command;
+    }
+    std::cout<< "Set robot_command.control" << __FILE__ << __LINE__ << std::endl;
+    for (size_t i=0; i<7; i++) {
+      std::cout << "-- robot_command.control.tau_J_d[" << i << "]:" << robot_command.control.tau_J_d[i] << std::endl;
     }
 
     if (current_move_motion_generator_mode_ !=
@@ -170,9 +186,12 @@ research_interface::robot::RobotCommand Robot::Impl::sendRobotCommand(
       throw ControlException("libfranka robot: Trying to send partial robot command!");
     }
 
+
+    std::cout << "network_->udpSend<research_interface::robot::RobotCommand>" << __FILE__ << __LINE__ << std::endl;
+  
     network_->udpSend<research_interface::robot::RobotCommand>(robot_command);
   }
-
+  std::cout << "sendRobotCommand: We are done?" << __FILE__ << __LINE__ << std::endl;
   return robot_command;
 }
 
@@ -182,6 +201,7 @@ research_interface::robot::RobotState Robot::Impl::receiveRobotState() {
   research_interface::robot::RobotState latest_accepted_state;
   latest_accepted_state.message_id = message_id_;
 
+  std::cout << "receiveRobotState: start udp receive." <<  std::endl; 
   // If states are already available on the socket, use the one with the most recent message ID.
   research_interface::robot::RobotState received_state{};
   while (network_->udpReceive(&received_state)) {
@@ -197,8 +217,9 @@ research_interface::robot::RobotState Robot::Impl::receiveRobotState() {
       latest_accepted_state = received_state;
     }
   }
-
+  std::cout << "receiveRobotState: state received. Updating ..." << std::endl;
   updateState(latest_accepted_state);
+  std::cout << "receiveRobotState: Done" << std::endl;
   return latest_accepted_state;
 }
 
@@ -233,10 +254,11 @@ uint32_t Robot::Impl::startMotion(
     const research_interface::robot::Move::Deviation& maximum_path_deviation,
     const research_interface::robot::Move::Deviation& maximum_goal_pose_deviation) {
   ZoneScoped;
-
+  std::cout << "startMotion: Robot::Impl::startMotion" << std::endl; 
   if (motionGeneratorRunning() || controllerRunning()) {
     throw ControlException("libfranka robot: Attempted to start multiple motions!");
   }
+  std::cout << "startMotion: Switch mode" << std::endl;   
 
   switch (motion_generator_mode) {
     case decltype(motion_generator_mode)::kJointPosition:
@@ -273,6 +295,8 @@ uint32_t Robot::Impl::startMotion(
       throw std::invalid_argument("libfranka robot: Invalid controller mode given.");
   }
 
+  std::cout << "startMotion: executeCommand<research_interface::robot::Move>" << std::endl; 
+
   const uint32_t move_command_id = executeCommand<research_interface::robot::Move>(
       controller_mode, motion_generator_mode, maximum_path_deviation, maximum_goal_pose_deviation);
 
@@ -284,12 +308,13 @@ uint32_t Robot::Impl::startMotion(
               move_command_id,
               std::bind(&Robot::Impl::handleCommandResponse<research_interface::robot::Move>, this,
                         std::placeholders::_1))) {
+        std::cout << "startMotion: Received Move response " << std::endl;
         break;
       }
     } catch (const CommandException& e) {
       throw ControlException(e.what());
     }
-
+    std::cout << "startMotion: Update robot state  " << std::endl;
     robot_state = update(nullptr, nullptr);
   }
 
@@ -321,14 +346,19 @@ void Robot::Impl::finishMotion(
   // this loop and explicitly wait for the Move response over TCP afterwards.
   RobotState robot_state{};
   while (motionGeneratorRunning() || controllerRunning()) {
+    std::cout << "finishMotion update robot state" << __FILE__ << __LINE__ << std::endl;
     robot_state = update(&motion_finished_command, control_command);
   }
+
+  std::cout << "finishMotion waiting for Move response" << __FILE__ << __LINE__ << std::endl;
 
   auto response = network_->tcpBlockingReceiveResponse<research_interface::robot::Move>(motion_id);
   if (response.status == research_interface::robot::Move::Status::kReflexAborted) {
     throw createControlException("Motion finished commanded, but the robot is still moving!",
                                  response.status, robot_state.last_motion_errors, logger_.flush());
   }
+  std::cout << "finishMotion Got Move response" << __FILE__ << __LINE__ << std::endl;
+
   try {
     handleCommandResponse<research_interface::robot::Move>(response);
   } catch (const CommandException& e) {
