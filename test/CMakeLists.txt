@@ -11,6 +11,7 @@ include(SetupGoogleTest)
 
 find_package(fmt REQUIRED)
 find_package(magic_enum REQUIRED)
+find_package(Tracy REQUIRED)
 
 foreach(lib ${GTEST_LIBRARIES})
   target_compile_options(${lib} PUBLIC -Wno-deprecated-copy)
@@ -28,6 +29,7 @@ set(TEST_DEPENDENCIES
   pinocchio::pinocchio
   fmt::fmt
   magic_enum::magic_enum
+  Tracy::TracyClient
 )
 set(TEST_INCLUDE_DIRECTORIES ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../src)
 
@@ -78,16 +80,36 @@ target_link_libraries(run_all_tests PUBLIC ${TEST_DEPENDENCIES})
 
 add_test(Default run_all_tests --gtest_output=xml:${TEST_OUTPUT_DIR}/default.xml)
 
+## Aescape Backend Library
+add_library(aescape_backend SHARED
+  backend/forward_dynamics.h
+  backend/forward_dynamics.cpp
+  backend/backend_interface.h
+  backend/forward_dynamics_backend.h
+  backend/forward_dynamics_backend.cpp
+)
+target_link_libraries(aescape_backend PUBLIC ${TEST_DEPENDENCIES})
+
+add_executable(forward_dynamics_tests
+backend/forward_dynamics_tests.cpp
+)
+target_link_libraries(forward_dynamics_tests PRIVATE ${TEST_DEPENDENCIES} aescape_backend)
+target_compile_definitions(forward_dynamics_tests PRIVATE ${TEST_COMPILE_DEFINITIONS})
+add_test(forward_dynamics_tests forward_dynamics_tests --gtest_output=xml:${TEST_OUTPUT_DIR}/default.xml)
+
 add_executable(franka_mock_server_example
   example/mock_server_example.cpp
   mock_server.cpp
+  helpers.cpp
 )
-target_link_libraries(franka_mock_server_example PRIVATE ${TEST_DEPENDENCIES})
+target_include_directories(franka_mock_server_example PRIVATE ${TEST_INCLUDE_DIRECTORIES})
+target_link_libraries(franka_mock_server_example PRIVATE ${TEST_DEPENDENCIES} aescape_backend)
 target_compile_definitions(franka_mock_server_example PRIVATE ${TEST_COMPILE_DEFINITIONS})
 
 add_executable(franka_mock_client_example
   example/mock_client_example.cpp
 )
+target_include_directories(franka_mock_client_example PRIVATE ${TEST_INCLUDE_DIRECTORIES})
 target_link_libraries(franka_mock_client_example PRIVATE ${TEST_DEPENDENCIES})
 target_compile_definitions(franka_mock_client_example PRIVATE ${TEST_COMPILE_DEFINITIONS})
 

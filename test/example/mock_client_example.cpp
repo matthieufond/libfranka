@@ -1,26 +1,15 @@
-#include <fmt/core.h>
 #include <franka/exception.h>
 #include <franka/model.h>
 #include <franka/robot.h>
-#include <iostream>
+#include <tracy/Tracy.hpp>
+
+#include "logging_macros.h"
 
 /*
  * This is a minimal client example to test the mock server example.
  * It contains all the libfranka calls used in the controls repo.
  *
  * */
-
-#define LOG_INFO(str, ...) logMessage(__FILE__, __LINE__, "INFO", str, ##__VA_ARGS__)
-
-template <typename... T>
-void logMessage(const char* filename,
-                int line,
-                const char* level,
-                const std::string& format_str,
-                T&&... args) {
-  std::cout << fmt::format("[{}]{}:{}: ", level, filename, line)
-            << fmt::format(format_str, std::forward<T>(args)...) << std::endl;
-}
 
 int main(int argc, char* argv[]) {
   if (argc < 2) {
@@ -36,8 +25,11 @@ int main(int argc, char* argv[]) {
     auto robot = std::make_shared<franka::Robot>(robotip, real_time_config);
     LOG_INFO("Create franka robot");
 
-    auto model = std::make_shared<franka::Model>(robot->loadModel());
-    LOG_INFO("Create franka model");
+    {
+      ZoneScopedN("CreateModel");
+      auto model = std::make_shared<franka::Model>(robot->loadModel());
+      LOG_INFO("Create franka model");
+    }
 
     robot->automaticErrorRecovery();
     LOG_INFO("automaticErrorRecovery");
@@ -56,19 +48,28 @@ int main(int argc, char* argv[]) {
     robot->setCartesianImpedance({{3000, 3000, 3000, 300, 300, 300}});
     LOG_INFO("setCartesianImpedance");
 
-    robot->readOnce();
+    auto initial_robot_state = robot->readOnce();
     LOG_INFO("Read once");
+    LOG_INFO_ARRAY("Robot initial joint positions q: ", initial_robot_state.q);
+    LOG_INFO_ARRAY("Robot initial joint velocities dq: ", initial_robot_state.dq);
+    LOG_INFO_ARRAY("Robot initial joint torques tau_J: ", initial_robot_state.tau_J);
+    LOG_INFO_ARRAY("Robot initial joint torques tau_J_d: ", initial_robot_state.tau_J_d);
 
     LOG_INFO("Start Torque control callback");
     static constexpr int kDOF = 7;
-    std::array<double, kDOF> tau_command{};
+    std::array<double, kDOF> tau_command{0, 0, 0, 0, 0, 0, 0.1};
     franka::Torques torques(tau_command);
     size_t count = 0;
-    auto torque_control_cb = [&](const franka::RobotState&, franka::Duration) -> franka::Torques {
-      LOG_INFO("FrankaDriver::torque_control_cb");
-      if (++count < 5) {
+    auto torque_control_cb = [&](const franka::RobotState& robot_state,
+                                 franka::Duration) -> franka::Torques {
+      ZoneScopedN("torque_control_cb");
+      if (++count < 10) {
         return torques;
       }
+      LOG_INFO_ARRAY("Final q", robot_state.q);
+      LOG_INFO_ARRAY("Final dq", robot_state.dq);
+      LOG_INFO_ARRAY("Final tau_J", robot_state.tau_J);
+      LOG_INFO_ARRAY("Final tau_J_d", robot_state.tau_J_d);
       return franka::MotionFinished(torques);
     };
     robot->control(torque_control_cb, true);

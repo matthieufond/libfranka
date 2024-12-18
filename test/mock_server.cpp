@@ -46,6 +46,8 @@ MockServer<C>::~MockServer() {
 template <typename C>
 MockServer<C>& MockServer<C>::onReceiveRobotCommand(
     ReceiveRobotCommandCallbackT on_receive_robot_command) {
+  ZoneScoped;
+
   std::lock_guard<std::mutex> _(command_mutex_);
   commands_.emplace_back("onReceiveRobotCommand", [=](Socket&, Socket& udp_socket) {
     research_interface::robot::RobotCommand robot_command;
@@ -59,6 +61,8 @@ MockServer<C>& MockServer<C>::onReceiveRobotCommand(
 
 template <typename C>
 MockServer<C>& MockServer<C>::spinOnce() {
+  ZoneScoped;
+
   std::unique_lock<std::mutex> lock(command_mutex_);
   continue_ = true;
   cv_.notify_one();
@@ -119,21 +123,28 @@ void MockServer<C>::serverThread() {
 
   Poco::Net::DatagramSocket udp_socket({kHostname, 0});
   udp_socket.setBlocking(true);
+  udp_socket.setReceiveTimeout(Poco::Timespan(0, 1000));
   Socket udp_socket_wrapper;
   udp_socket_wrapper.sendBytes = [&](const void* data, size_t size) {
-    std::lock_guard<std::mutex> _(udp_mutex_);
+    //std::lock_guard<std::mutex> _(udp_mutex_);
     int rv = udp_socket.sendTo(data, size, {remote_address.host(), udp_port});
     ASSERT_EQ(static_cast<int>(size), rv) << "Send error on UDP socket";
   };
   udp_socket_wrapper.receiveBytes = [&](void* data, size_t size) {
-    std::lock_guard<std::mutex> _(udp_mutex_);
-    int rv = udp_socket.receiveFrom(data, size, remote_address);
-    ASSERT_EQ(static_cast<int>(size), rv) << "Receive error on UDP socket";
+    //std::lock_guard<std::mutex> _(udp_mutex_);
+    try {
+      int rv = udp_socket.receiveFrom(data, size, remote_address);
+      ASSERT_EQ(static_cast<int>(size), rv) << "Receive error on UDP socket";
+    } catch(const Poco::TimeoutException& exc) {
+      std::cout << "TImeout receiving command" << std::endl;
+    }
   };
 
   sendInitialState(udp_socket_wrapper);
 
   while (!shutdown_) {
+    ZoneScopedN("server_loop");
+
     cv_.wait(lock, [this] { return continue_ || shutdown_; });
     while (!commands_.empty()) {
       auto callback = commands_.front().second;
@@ -165,6 +176,8 @@ void MockServer<C>::serverThread() {
 template <typename C>
 MockServer<C>& MockServer<C>::generic(
     std::function<void(MockServer<C>::Socket&, MockServer<C>::Socket&)> generic_command) {
+  ZoneScoped;
+
   std::lock_guard<std::mutex> _(command_mutex_);
   commands_.emplace_back("generic", generic_command);
   return *this;
@@ -175,6 +188,8 @@ void MockServer<C>::sendInitialState(Socket&) {}
 
 template <>
 void MockServer<RobotTypes>::sendInitialState(Socket& udp_socket) {
+  ZoneScoped;
+
   research_interface::robot::RobotState state{};
   state.message_id = ++sequence_number_;
   udp_socket.sendBytes(&state, sizeof(state));
@@ -182,6 +197,8 @@ void MockServer<RobotTypes>::sendInitialState(Socket& udp_socket) {
 
 template <typename C>
 MockServer<C>& MockServer<C>::doForever(std::function<bool()> callback) {
+  ZoneScoped;
+
   std::lock_guard<std::mutex> _(command_mutex_);
   return doForever(callback, commands_.end());
 }
@@ -189,6 +206,8 @@ MockServer<C>& MockServer<C>::doForever(std::function<bool()> callback) {
 template <typename C>
 MockServer<C>& MockServer<C>::doForever(std::function<bool()> callback,
                                         typename decltype(MockServer::commands_)::iterator it) {
+  ZoneScoped;
+
   auto callback_wrapper = [=](Socket&, Socket&) {
     std::unique_lock<std::mutex> lock(command_mutex_);
     if (shutdown_) {
