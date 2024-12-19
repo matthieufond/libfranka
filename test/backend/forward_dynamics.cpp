@@ -3,6 +3,7 @@
 #include <pinocchio/algorithm/aba.hpp>
 #include <pinocchio/algorithm/crba.hpp>
 #include <pinocchio/algorithm/joint-configuration.hpp>
+#include <pinocchio/algorithm/rnea.hpp>
 
 namespace aescape {
 
@@ -17,9 +18,11 @@ RobotState updateRobotStateABA(const pinocchio::Model& model,
 
   pinocchio::Data data(model);
   const auto Minv = pinocchio::computeMinverse(model, data, prev_robot_state.q);
+  const auto tau0 = pinocchio::computeGeneralizedGravity(model, data, prev_robot_state.q);
 
   RobotState new_robot_state;
   new_robot_state.tau = tau;
+  new_robot_state.tau_total = tau + tau0;
   new_robot_state.ddq = Minv * (tau);
   new_robot_state.dq = prev_robot_state.dq + new_robot_state.ddq * dt;
   new_robot_state.q = pinocchio::integrate(model, prev_robot_state.q, new_robot_state.dq);
@@ -37,9 +40,11 @@ RobotState updateRobotStateCRBA(const pinocchio::Model& model,
 
   pinocchio::Data data(model);
   const auto M = pinocchio::crba(model, data, prev_robot_state.q);
+  const auto tau0 = pinocchio::computeGeneralizedGravity(model, data, prev_robot_state.q);
 
   RobotState new_robot_state;
   new_robot_state.tau = tau;
+  new_robot_state.tau_total = tau + tau0;
   new_robot_state.ddq = M.inverse() * (tau);
   new_robot_state.dq = prev_robot_state.dq + new_robot_state.ddq * dt;
   new_robot_state.q = pinocchio::integrate(model, prev_robot_state.q, new_robot_state.dq);

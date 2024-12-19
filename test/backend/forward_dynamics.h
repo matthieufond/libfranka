@@ -22,6 +22,7 @@ struct RobotState {
   Eigen::VectorXd dq{Eigen::VectorXd::Zero(kNumJoints)};   // joint velocities
   Eigen::VectorXd ddq{Eigen::VectorXd::Zero(kNumJoints)};  // joint accelerations
   Eigen::VectorXd tau{Eigen::VectorXd::Zero(kNumJoints)};  // joint torques
+  Eigen::VectorXd tau_total{Eigen::VectorXd::Zero(kNumJoints)};  // total torques
 };
 
 /*

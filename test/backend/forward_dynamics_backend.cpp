@@ -23,7 +23,7 @@ bool ForwardDynamicsBackend::updateRobotState(research_interface::robot::RobotSt
     state.q[i] = robot_state_.q(i);
     state.dq[i] = robot_state_.dq(i);
     state.dq_d[i] = robot_state_.dq(i);
-    state.tau_J[i] = robot_state_.tau(i);
+    state.tau_J[i] = robot_state_.tau_total(i);
     state.tau_J_d[i] = robot_state_.tau(i);
   }
   return true;
