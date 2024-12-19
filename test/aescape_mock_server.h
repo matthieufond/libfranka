@@ -73,18 +73,6 @@ r::Move::Response moveSuccessResp() {
 
 constexpr int kNumJoints = 7;
 
-class Backend {
-public:
-    virtual void updateRobotState(r::RobotState& state) = 0;
-    virtual void updateRobotCommand(const r::RobotCommand& cmd) = 0;
-};
-
-class DummyBackend : public Backend {
-    void updateRobotState(r::RobotState& state) {(void)state;}
-    void updateRobotCommand(const r::RobotCommand& cmd) {(void)cmd;}
-};
-
-
 /*
  * Aescape MockServer example
  */
@@ -99,6 +87,9 @@ class AescapeMockServer : public MockServer<C> {
       std::string ip = "127.0.0.1")
       : MockServer<C>(on_connect, sequence_number, std::move(ip)), robot_backend_(robot_backend), state_send_rate_hz_(state_send_rate_hz)  {
         testRobotStateIsZero(franka::convertRobotState(state_));
+
+        // Start separate thread to run state loop
+        state_thread_ = std::thread(&AescapeMockServer::updateLoop, this);
       }
 
   /*
@@ -107,7 +98,7 @@ class AescapeMockServer : public MockServer<C> {
   AescapeMockServer& handleReadOnce() {
     ZoneScoped;
 
-    MockServer<C>::template onSendUDP<r::RobotState>(
+    MockServer<C>::template onSendUDPSeparateThread<r::RobotState>(
         [this](r::RobotState& robot_state) {
           ZoneScopedN("SendState");
           std::lock_guard<std::mutex> lck(mut_);
@@ -129,7 +120,7 @@ class AescapeMockServer : public MockServer<C> {
   AescapeMockServer& handleUpdate() {
     ZoneScoped;
 
-    handleReadOnce().spinOnce().onReceiveRobotCommand(
+    handleReadOnce().spinOnce().onReceiveRobotCommandSeparateThread(
         [this](const r::RobotCommand& cmd) {
           ZoneScopedN("OnReceiveRobotCommand");
           // TODO(matthieu): Handle timeout
@@ -188,6 +179,15 @@ class AescapeMockServer : public MockServer<C> {
   AescapeMockServer& spinOnce() override {
     MockServer<C>::spinOnce();
     return *this;
+  }
+
+  void updateLoop() {
+    ZoneScoped;
+    while (!stopped_) {
+      LOG_INFO("    -- updateLoop");
+      handleReadOnce();
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
   }
 
   void stateLoop() {
@@ -250,7 +250,12 @@ class AescapeMockServer : public MockServer<C> {
 
   }
 
-  ~AescapeMockServer() = default;
+  ~AescapeMockServer() 
+  {
+    MockServer<C>::ignoreUdpBuffer();
+    stopped_ = true;
+    state_thread_.join();
+  }
 
  private:
   std::shared_ptr<aescape::BackendInterface> robot_backend_;
@@ -262,5 +267,6 @@ class AescapeMockServer : public MockServer<C> {
   r::RobotCommand cmd_{};
   r::RobotState state_{};
   bool stopped_{false};
+  std::thread state_thread_;
 };
 

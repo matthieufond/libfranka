@@ -60,6 +60,23 @@ MockServer<C>& MockServer<C>::onReceiveRobotCommand(
 }
 
 template <typename C>
+MockServer<C>& MockServer<C>::onReceiveRobotCommandSeparateThread(
+    ReceiveRobotCommandCallbackT on_receive_robot_command) {
+  ZoneScoped;
+
+  std::lock_guard<std::mutex> _(command_mutex_);
+  udp_commands_.emplace_back("onReceiveRobotCommandSeparateThread", [=](Socket&, Socket& udp_socket) {
+    research_interface::robot::RobotCommand robot_command;
+    udp_socket.receiveBytes(&robot_command, sizeof(robot_command));
+    if (on_receive_robot_command) {
+      on_receive_robot_command(robot_command);
+    }
+  });
+  return *this;
+}
+
+
+template <typename C>
 MockServer<C>& MockServer<C>::spinOnce() {
   ZoneScoped;
 
@@ -190,12 +207,15 @@ void MockServer<C>::UdpOnlyThread() {
   std::cout << "UdpOnlyThread" << std::endl;
 
   while (!shutdown_) {
-    ZoneScopedN("server_loop");
+    ZoneScopedN("UdpOnlyThread");
     if (!udp_commands_.empty()) {
       auto callback = udp_commands_.front().second;
+      std::cout << "UdpOnlyThread: callback: " <<  udp_commands_.front().first << std::endl;
       udp_commands_.pop_front();
       callback(tcp_socket_wrapper_, udp_socket_wrapper_);
     }
+
+    std::cout << "UdpOnlyThread: Empty" << std::endl;
 
     std::chrono::microseconds duration(10);
     std::this_thread::sleep_for(duration);

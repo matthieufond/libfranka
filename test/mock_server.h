@@ -79,6 +79,9 @@ class MockServer {
   MockServer& onReceiveRobotCommand(
       ReceiveRobotCommandCallbackT on_receive_robot_command = ReceiveRobotCommandCallbackT());
 
+  MockServer& onReceiveRobotCommandSeparateThread(
+      ReceiveRobotCommandCallbackT on_receive_robot_command = ReceiveRobotCommandCallbackT());
+
   MockServer& generic(std::function<void(Socket&, Socket&)> generic_command);
 
   template <typename T>
@@ -247,7 +250,7 @@ MockServer<C>& MockServer<C>::onSendUDPSeparateThread(std::function<T()> on_send
   ZoneScoped;
 
   std::lock_guard<std::mutex> _(command_mutex_);
-  udp_commands_.emplace_back("onSendUDP", [=](Socket&, Socket& udp_socket) {
+  udp_commands_.emplace_back("onSendUDPSeparateThread", [=](Socket&, Socket& udp_socket) {
     T state = on_send_udp();
     udp_socket.sendBytes(&state, sizeof(state));
   });
