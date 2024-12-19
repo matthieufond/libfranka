@@ -113,18 +113,15 @@ class MockServer {
 
  private:
   void serverThread();
-  void UdpOnlyThread();
-
   void sendInitialState(Socket& udp_socket);
 
   template <typename T>
   MockServer& onSendUDP(std::function<T()> on_send_udp);
 
-  template <typename T>
-  MockServer& onSendUDPSeparateQueue(std::function<T()> on_send_udp);
-
   std::condition_variable_any cv_;
   std::mutex command_mutex_;
+  std::condition_variable_any udp_cv_;
+  std::mutex udp_command_mutex_;
   std::mutex tcp_mutex_;
   std::mutex udp_mutex_;
   std::thread server_thread_;

@@ -1,6 +1,5 @@
 #pragma once
 #include <fmt/core.h>
-#include <fmt/ostream.h>
 #include <iostream>
 
 #define LOG_INFO(str, ...) logMessage(__FILE__, __LINE__, "INFO", str, ##__VA_ARGS__)

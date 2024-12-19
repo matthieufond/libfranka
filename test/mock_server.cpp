@@ -201,6 +201,7 @@ void MockServer<C>::serverThread() {
 
 template <typename C>
 void MockServer<C>::UdpOnlyThread() {
+  std::unique_lock<std::mutex> udp_cmd_lck(udp_command_mutex_);
   while (!shutdown_) {
     ZoneScopedN("UdpOnlyThread");
     if (!udp_commands_.empty()) {
