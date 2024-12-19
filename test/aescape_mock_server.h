@@ -185,10 +185,16 @@ class AescapeMockServer : public MockServer<C> {
 
   void updateLoop() {
     ZoneScoped;
-    while (!in_state_loop_ && !stopped_) {
-      LOG_INFO("    -- updateLoop");
-      handleReadOnce();
+    while (!stopped_) {
+      // Run without update if we are not in state loop and not stopped
+      while (!in_state_loop_) {
+        LOG_INFO("    -- updateLoop");
+        handleReadOnce();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      }
+
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
     }
   }
 
@@ -258,6 +264,7 @@ class AescapeMockServer : public MockServer<C> {
     MockServer<C>::ignoreUdpBuffer();
     stopped_ = true;
     update_thread_.join();
+    std::cout << "Destructor call finished" << std::endl;
   }
 
  private:

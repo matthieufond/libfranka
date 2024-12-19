@@ -152,6 +152,6 @@ int main(int argc, char* argv[]) {
   server.waitForCommand<r::StopMove>([](const r::StopMove::Request&) {
     LOG_INFO(" ++ Received StopMove");
     return r::StopMove::Response(r::StopMove::Status::kSuccess);
-  });
+  }).spinOnce();
   LOG_INFO("DONE");
 }
