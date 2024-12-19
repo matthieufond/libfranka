@@ -185,17 +185,19 @@ class AescapeMockServer : public MockServer<C> {
 
   void updateLoop() {
     ZoneScoped;
-    while (!stopped_) {
+    while (!destructor_called_) {
       // Run without update if we are not in state loop and not stopped
-      while (!in_state_loop_) {
+      while (!in_state_loop_ && !destructor_called_) {
         LOG_INFO("    -- updateLoop");
         handleReadOnce();
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
       }
+      LOG_INFO("    -- state loop running destructor_called_: {}, in_state_loop_: {}", destructor_called_, in_state_loop_);
 
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      std::this_thread::sleep_for(std::chrono::microseconds(10));
 
     }
+    LOG_INFO("    -- updateLoop finished");
   }
 
   void stateLoop() {
@@ -256,13 +258,15 @@ class AescapeMockServer : public MockServer<C> {
       mut.lock();
       state_ = state;
     }
+    LOG_INFO("getting out of state loop");
+    in_state_loop_ = false;
 
   }
 
   ~AescapeMockServer() 
   {
     MockServer<C>::ignoreUdpBuffer();
-    stopped_ = true;
+    destructor_called_ = true;
     update_thread_.join();
     std::cout << "Destructor call finished" << std::endl;
   }
@@ -278,6 +282,7 @@ class AescapeMockServer : public MockServer<C> {
   r::RobotState state_{};
   bool stopped_{false};
   std::atomic_bool in_state_loop_{false};
+  std::atomic_bool destructor_called_{false};
   std::thread update_thread_;
 };
 
