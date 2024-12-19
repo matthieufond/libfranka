@@ -60,12 +60,12 @@ MockServer<C>& MockServer<C>::onReceiveRobotCommand(
 }
 
 template <typename C>
-MockServer<C>& MockServer<C>::onReceiveRobotCommandSeparateThread(
+MockServer<C>& MockServer<C>::onReceiveRobotCommandSeparateQueue(
     ReceiveRobotCommandCallbackT on_receive_robot_command) {
   ZoneScoped;
 
   std::lock_guard<std::mutex> _(command_mutex_);
-  udp_commands_.emplace_back("onReceiveRobotCommandSeparateThread", [=](Socket&, Socket& udp_socket) {
+  udp_commands_.emplace_back("onReceiveRobotCommandSeparateQueue", [=](Socket&, Socket& udp_socket) {
     research_interface::robot::RobotCommand robot_command;
     udp_socket.receiveBytes(&robot_command, sizeof(robot_command));
     if (on_receive_robot_command) {

@@ -100,7 +100,7 @@ class AescapeMockServer : public MockServer<C> {
   AescapeMockServer& handleReadOnce() {
     ZoneScoped;
 
-    MockServer<C>::template onSendUDPSeparateThread<r::RobotState>(
+    MockServer<C>::template onSendUDPSeparateQueue<r::RobotState>(
         [this](r::RobotState& robot_state) {
           ZoneScopedN("SendState");
           std::lock_guard<std::mutex> lck(mut_);
@@ -122,7 +122,7 @@ class AescapeMockServer : public MockServer<C> {
   AescapeMockServer& handleUpdate() {
     ZoneScoped;
 
-    handleReadOnce().spinOnce().onReceiveRobotCommandSeparateThread(
+    handleReadOnce().spinOnce().onReceiveRobotCommandSeparateQueue(
         [this](const r::RobotCommand& cmd) {
           ZoneScopedN("OnReceiveRobotCommand");
           // TODO(matthieu): Handle timeout
@@ -188,16 +188,11 @@ class AescapeMockServer : public MockServer<C> {
     while (!destructor_called_) {
       // Run without update if we are not in state loop and not stopped
       while (!in_state_loop_ && !destructor_called_) {
-        LOG_INFO("    -- updateLoop");
         handleReadOnce();
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
       }
-      LOG_INFO("    -- state loop running destructor_called_: {}, in_state_loop_: {}", destructor_called_, in_state_loop_);
-
       std::this_thread::sleep_for(std::chrono::microseconds(10));
-
     }
-    LOG_INFO("    -- updateLoop finished");
   }
 
   void stateLoop() {

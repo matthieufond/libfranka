@@ -74,12 +74,12 @@ class MockServer {
   MockServer& onSendUDP(std::function<void(T&)> on_send_udp);
 
   template <typename T>
-  MockServer& onSendUDPSeparateThread(std::function<void(T&)> on_send_udp);
+  MockServer& onSendUDPSeparateQueue(std::function<void(T&)> on_send_udp);
 
   MockServer& onReceiveRobotCommand(
       ReceiveRobotCommandCallbackT on_receive_robot_command = ReceiveRobotCommandCallbackT());
 
-  MockServer& onReceiveRobotCommandSeparateThread(
+  MockServer& onReceiveRobotCommandSeparateQueue(
       ReceiveRobotCommandCallbackT on_receive_robot_command = ReceiveRobotCommandCallbackT());
 
   MockServer& generic(std::function<void(Socket&, Socket&)> generic_command);
@@ -121,7 +121,7 @@ class MockServer {
   MockServer& onSendUDP(std::function<T()> on_send_udp);
 
   template <typename T>
-  MockServer& onSendUDPSeparateThread(std::function<T()> on_send_udp);
+  MockServer& onSendUDPSeparateQueue(std::function<T()> on_send_udp);
 
   std::condition_variable_any cv_;
   std::mutex command_mutex_;
@@ -245,11 +245,11 @@ MockServer<C>& MockServer<C>::onSendUDP(std::function<void(T&)> on_send_udp) {
 
 template <typename C>
 template <typename T>
-MockServer<C>& MockServer<C>::onSendUDPSeparateThread(std::function<T()> on_send_udp) {
+MockServer<C>& MockServer<C>::onSendUDPSeparateQueue(std::function<T()> on_send_udp) {
   ZoneScoped;
 
   std::lock_guard<std::mutex> _(command_mutex_);
-  udp_commands_.emplace_back("onSendUDPSeparateThread", [=](Socket&, Socket& udp_socket) {
+  udp_commands_.emplace_back("onSendUDPSeparateQueue", [=](Socket&, Socket& udp_socket) {
     T state = on_send_udp();
     udp_socket.sendBytes(&state, sizeof(state));
   });
@@ -259,10 +259,10 @@ MockServer<C>& MockServer<C>::onSendUDPSeparateThread(std::function<T()> on_send
 
 template <typename C>
 template <typename T>
-MockServer<C>& MockServer<C>::onSendUDPSeparateThread(std::function<void(T&)> on_send_udp) {
-  ZoneScopedN("onSendUDPSeparateThread_2");
+MockServer<C>& MockServer<C>::onSendUDPSeparateQueue(std::function<void(T&)> on_send_udp) {
+  ZoneScopedN("onSendUDPSeparateQueue_2");
 
-  return onSendUDPSeparateThread<T>([=]() {
+  return onSendUDPSeparateQueue<T>([=]() {
     T state{};
     state.message_id = ++sequence_number_;
     if (on_send_udp) {

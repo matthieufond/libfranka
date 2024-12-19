@@ -124,7 +124,7 @@ int main(int argc, char* argv[]) {
           })
       .spinOnce();
 
-  LOG_INFO("--- Read current state ->readOnce (handles by update thread)");  // Can miss. Try twice here.
+  LOG_INFO("--- Read current state ->readOnce (Handle by update thread)");  // Can miss. Try twice here.
 
   LOG_INFO("--- Run control loop ->control");
   LOG_INFO(" ++ ControlLoop Constructor");
@@ -132,8 +132,7 @@ int main(int argc, char* argv[]) {
   // Send Move response again for startMotion haven't done a RobotState update yet
   // and it checks for a Move response. It does not send another request so simply send a response
   server.waitForMove().spinOnce().respondMove().spinOnce();
-  LOG_INFO("    -- Handle robot.update()");
-  // server.handleUpdate().spinOnce();
+  LOG_INFO("    -- Handle robot.update() (Handle by update thread)");
   LOG_INFO(" ++ ControlLoop Constructor DONE");
 
   LOG_INFO(" ++ operator()()");
