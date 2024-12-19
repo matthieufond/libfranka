@@ -126,12 +126,12 @@ void MockServer<C>::serverThread() {
   udp_socket.setReceiveTimeout(Poco::Timespan(0, 1000));
   Socket udp_socket_wrapper;
   udp_socket_wrapper.sendBytes = [&](const void* data, size_t size) {
-    //std::lock_guard<std::mutex> _(udp_mutex_);
+    std::lock_guard<std::mutex> _(udp_mutex_);
     int rv = udp_socket.sendTo(data, size, {remote_address.host(), udp_port});
     ASSERT_EQ(static_cast<int>(size), rv) << "Send error on UDP socket";
   };
   udp_socket_wrapper.receiveBytes = [&](void* data, size_t size) {
-    //std::lock_guard<std::mutex> _(udp_mutex_);
+    std::lock_guard<std::mutex> _(udp_mutex_);
     try {
       int rv = udp_socket.receiveFrom(data, size, remote_address);
       ASSERT_EQ(static_cast<int>(size), rv) << "Receive error on UDP socket";
@@ -140,23 +140,35 @@ void MockServer<C>::serverThread() {
     }
   };
 
+  tcp_socket_wrapper_ = tcp_socket_wrapper;
+  udp_socket_wrapper_ = udp_socket_wrapper;
+
   sendInitialState(udp_socket_wrapper);
 
+  std::cout << "Starting two threads to handle commands" << std::endl;
+
+  // todo: start two threads, one for tcp and one for udp
+  auto udp_only_command_thread_ = std::thread(&MockServer<C>::UdpOnlyThread, this);
+
+  std::cout << "thread started" << std::endl;
   while (!shutdown_) {
     ZoneScopedN("server_loop");
-
+    std::cout << "server_loop" << std::endl;
     cv_.wait(lock, [this] { return continue_ || shutdown_; });
+    std::cout << "server_loop pass cv" << std::endl;
     while (!commands_.empty()) {
       auto callback = commands_.front().second;
       commands_.pop_front();
       lock.unlock();
-      callback(tcp_socket_wrapper, udp_socket_wrapper);
+      callback(tcp_socket_wrapper_, udp_socket_wrapper_);
       lock.lock();
     }
 
     continue_ = false;
     cv_.notify_one();
   }
+  
+  udp_only_command_thread_.join();
 
   if (!ignore_udp_buffer_) {
     EXPECT_FALSE(udp_socket.poll(Poco::Timespan(), Poco::Net::Socket::SelectMode::SELECT_READ))
@@ -172,6 +184,31 @@ void MockServer<C>::serverThread() {
     EXPECT_EQ(0, rv) << "TCP socket still has data";
   }
 }
+
+template <typename C>
+void MockServer<C>::UdpOnlyThread() {
+  std::cout << "UdpOnlyThread" << std::endl;
+
+  while (!shutdown_) {
+    ZoneScopedN("server_loop");
+    if (!udp_commands_.empty()) {
+      auto callback = udp_commands_.front().second;
+      udp_commands_.pop_front();
+      callback(tcp_socket_wrapper_, udp_socket_wrapper_);
+    }
+
+    std::chrono::microseconds duration(10);
+    std::this_thread::sleep_for(duration);
+  }
+}
+
+template <typename C>
+void MockServer<C>::UdpAndTcpThread() {
+  std::cout << "UdpAndTcpThread" << std::endl;
+  std::cout << "UdpAndTcpThreadDone" << std::endl;
+}
+
+
 
 template <typename C>
 MockServer<C>& MockServer<C>::generic(

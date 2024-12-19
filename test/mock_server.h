@@ -110,6 +110,9 @@ class MockServer {
 
  private:
   void serverThread();
+  void UdpOnlyThread();
+  void UdpAndTcpThread();
+
   void sendInitialState(Socket& udp_socket);
 
   template <typename T>
@@ -132,6 +135,9 @@ class MockServer {
 
   const ConnectCallbackT on_connect_;
   std::string ip_;
+
+  Socket tcp_socket_wrapper_;
+  Socket udp_socket_wrapper_;
 
   std::deque<std::pair<std::string, std::function<void(Socket&, Socket&)>>> commands_;
   std::deque<std::pair<std::string, std::function<void(Socket&, Socket&)>>> udp_commands_;
