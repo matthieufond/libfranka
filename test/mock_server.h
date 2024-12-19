@@ -114,7 +114,6 @@ class MockServer {
  private:
   void serverThread();
   void UdpOnlyThread();
-  void UdpAndTcpThread();
 
   void sendInitialState(Socket& udp_socket);
 

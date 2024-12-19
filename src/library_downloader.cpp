@@ -5,8 +5,6 @@
 #include <exception>
 #include <fstream>
 #include <vector>
-#include <iostream>
-
 
 #include <Poco/SharedLibrary.h>
 
@@ -51,17 +49,12 @@ LibraryDownloader::LibraryDownloader(Network& network)
     throw ModelException("libfranka: Server reports error when loading model library.");
   }
 
-
-  std::cout << "++++ Model library loaded" << std::endl;
-  std::cout << "++++ buffer.size():" << buffer.size() << std::endl;
-
   try {
     std::ofstream model_library_stream(path().c_str(), std::ios_base::out | std::ios_base::binary);
     model_library_stream.write(reinterpret_cast<char*>(buffer.data()), buffer.size());
   } catch (const std::exception& ex) {
     throw ModelException("libfranka: Cannot save model library.");
   }
-  std::cout << "++++ Wrote model_library_stream" << std::endl;
 }
 
 LibraryDownloader::~LibraryDownloader() {

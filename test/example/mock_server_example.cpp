@@ -124,9 +124,7 @@ int main(int argc, char* argv[]) {
           })
       .spinOnce();
 
-  LOG_INFO("--- Read current state ->readOnce");  // Can miss. Try twice here.
-  server.handleReadOnce().spinOnce();
-  server.handleReadOnce().spinOnce();
+  LOG_INFO("--- Read current state ->readOnce (handles by update thread)");  // Can miss. Try twice here.
 
   LOG_INFO("--- Run control loop ->control");
   LOG_INFO(" ++ ControlLoop Constructor");
@@ -135,7 +133,7 @@ int main(int argc, char* argv[]) {
   // and it checks for a Move response. It does not send another request so simply send a response
   server.waitForMove().spinOnce().respondMove().spinOnce();
   LOG_INFO("    -- Handle robot.update()");
-  server.handleUpdate().spinOnce();
+  // server.handleUpdate().spinOnce();
   LOG_INFO(" ++ ControlLoop Constructor DONE");
 
   LOG_INFO(" ++ operator()()");

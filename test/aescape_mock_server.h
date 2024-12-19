@@ -87,11 +87,13 @@ class AescapeMockServer : public MockServer<C> {
       std::string ip = "127.0.0.1")
       : MockServer<C>(on_connect, sequence_number, std::move(ip)), robot_backend_(robot_backend), state_send_rate_hz_(state_send_rate_hz)  {
         testRobotStateIsZero(franka::convertRobotState(state_));
+        startUpdateThread();
 
-        // Start separate thread to run state loop
-        state_thread_ = std::thread(&AescapeMockServer::updateLoop, this);
       }
 
+  void startUpdateThread(){
+    update_thread_ = std::thread(&AescapeMockServer::updateLoop, this);
+  }
   /*
    * Handle robot.readOnce() by responding with the robot state
    */
@@ -183,7 +185,7 @@ class AescapeMockServer : public MockServer<C> {
 
   void updateLoop() {
     ZoneScoped;
-    while (!stopped_) {
+    while (!in_state_loop_ && !stopped_) {
       LOG_INFO("    -- updateLoop");
       handleReadOnce();
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -191,6 +193,7 @@ class AescapeMockServer : public MockServer<C> {
   }
 
   void stateLoop() {
+    in_state_loop_ = true;
     ZoneScoped;
     using clock = std::chrono::steady_clock;
     uint64_t cycles = 0;
@@ -254,7 +257,7 @@ class AescapeMockServer : public MockServer<C> {
   {
     MockServer<C>::ignoreUdpBuffer();
     stopped_ = true;
-    state_thread_.join();
+    update_thread_.join();
   }
 
  private:
@@ -267,6 +270,7 @@ class AescapeMockServer : public MockServer<C> {
   r::RobotCommand cmd_{};
   r::RobotState state_{};
   bool stopped_{false};
-  std::thread state_thread_;
+  std::atomic_bool in_state_loop_{false};
+  std::thread update_thread_;
 };
 

@@ -18,20 +18,11 @@
 #include <franka/rate_limiting.h>
 
 #include "motion_generator_traits.h"
-#include <iostream>
 
 // `using std::string_literals::operator""s` produces a GCC warning that cannot be disabled, so we
 // have to use `using namespace ...`.
 // See https://gcc.gnu.org/bugzilla/show_bug.cgi?id=65923#c0
 using namespace std::string_literals;  // NOLINT(google-build-using-namespace)
-
-void logArray(const std::array<double, 7 >& arr, const std::string& name) {
-  std::string str = name + ": ";
-  for (size_t i = 0; i < arr.size(); i++) {
-    str += std::to_string(i) + ":" + std::to_string(arr[i]) + ", ";
-  }
-  std::cout << str;
-}
 
 namespace franka {
 
@@ -54,7 +45,6 @@ ControlLoop<T>::ControlLoop(RobotControl& robot,
   if (throw_on_error && !hasRealtimeKernel()) {
     throw RealtimeException("libfranka: Running kernel does not have realtime capabilities.");
   }
-  std::cout << "Finished ControlLoop constructor" << __FILE__ << __LINE__ << std::endl;
 }
 
 template <typename T>
@@ -77,13 +67,9 @@ ControlLoop<T>::ControlLoop(RobotControl& robot,
     throw std::invalid_argument("libfranka: Invalid motion callback given.");
   }
 
-
-  std::cout << "Starting startMotion" << __FILE__ << __LINE__ << std::endl;
   motion_id_ = robot.startMotion(
       research_interface::robot::Move::ControllerMode::kExternalController,
       MotionGeneratorTraits<T>::kMotionGeneratorMode, kDefaultDeviation, kDefaultDeviation);
-
-  std::cout << "Finished startMotion" << __FILE__ << __LINE__ << std::endl;
 }
 
 template <typename T>
@@ -109,45 +95,30 @@ ControlLoop<T>::ControlLoop(RobotControl& robot,
     default:
       throw std::invalid_argument("libfranka: Invalid controller mode given.");
   }
-  std::cout << "Starting startMotion with setting controller mode" << __FILE__ << __LINE__ << std::endl;
   motion_id_ = robot.startMotion(mode, MotionGeneratorTraits<T>::kMotionGeneratorMode,
                                  kDefaultDeviation, kDefaultDeviation);
-  std::cout << "Finished startMotion with setting controller mode" << __FILE__ << __LINE__ << std::endl;
 }
 
 template <typename T>
 void ControlLoop<T>::operator()() try {
-  std::cout << "-------------Before Callback Start ----------" << __FILE__ << __LINE__ << std::endl;
   ZoneScoped;
-  std::cout << "-- Waiting for robot state" << __FILE__ << __LINE__ << std::endl;
-  RobotState robot_state = robot_.update(nullptr, nullptr);
-  std::cout << "-- Check on motion error" << __FILE__ << __LINE__ << std::endl;
-  robot_.throwOnMotionError(robot_state, motion_id_);
-  std::cout << "-- No Error throw" << __FILE__ << __LINE__ << std::endl;
-  Duration previous_time = robot_state.time;
-  std::cout << "-------------Before Callback End ----------" << __FILE__ << __LINE__ << std::endl;
 
-  
+  RobotState robot_state = robot_.update(nullptr, nullptr);
+  robot_.throwOnMotionError(robot_state, motion_id_);
+
+  Duration previous_time = robot_state.time;
+
   research_interface::robot::MotionGeneratorCommand motion_command{};
   if (control_callback_) {
     research_interface::robot::ControllerCommand control_command{};
-    std::cout << "-- in Control loop" << __FILE__ << __LINE__ << std::endl;
     while (spinMotion(robot_state, robot_state.time - previous_time, &motion_command) &&
            spinControl(robot_state, robot_state.time - previous_time, &control_command)) {
-      std::cout << "-------------Start ----------" << __FILE__ << __LINE__ << std::endl;
       previous_time = robot_state.time;
       robot_state = robot_.update(&motion_command, &control_command);
-      logArray(robot_state.tau_J_d, "robot_state.tau_J_d");
-      std::cout << __FILE__ << __LINE__ << std::endl;
-
       robot_.throwOnMotionError(robot_state, motion_id_);
-      std::cout << "-------------End ----------" << __FILE__ << __LINE__ << std::endl;
     }
-    std::cout << "-------------Finish ----------" << __FILE__ << __LINE__ << std::endl;
     robot_.finishMotion(motion_id_, &motion_command, &control_command);
-    
   } else {
-    std::cout << "-- in motion loop" << __FILE__ << __LINE__ << std::endl;
     while (spinMotion(robot_state, robot_state.time - previous_time, &motion_command)) {
       previous_time = robot_state.time;
       robot_state = robot_.update(&motion_command, nullptr);
@@ -155,7 +126,6 @@ void ControlLoop<T>::operator()() try {
     }
     robot_.finishMotion(motion_id_, &motion_command, nullptr);
   }
-  std::cout << "--------- operator()() End ----------" << __FILE__ << __LINE__ << std::endl;
 } catch (const Exception & exc) {
   try {
     std::cout << "TODO: Handle stop properly, for now raise Exception: " << exc.what() << std::endl;
@@ -169,51 +139,31 @@ template <typename T>
 bool ControlLoop<T>::spinControl(const RobotState& robot_state,
                                  franka::Duration time_step,
                                  research_interface::robot::ControllerCommand* command) {
-  ZoneScoped;  
-  std::cout << "in spinControl" << __FILE__ << __LINE__ << std::endl;
-  Torques control_output = control_callback_(robot_state, time_step);
-  logArray(control_output.tau_J, "Before lowpass  : control_output.tau_J");
-  std::cout <<  __FILE__ << __LINE__ << std::endl;
-  logArray(robot_state.tau_J_d, "robot_state - tau_J_d");
-  std::cout <<  __FILE__ << __LINE__ << std::endl;
+  ZoneScoped;
 
+  Torques control_output = control_callback_(robot_state, time_step);
   if (cutoff_frequency_ < kMaxCutoffFrequency) {
     for (size_t i = 0; i < 7; i++) {
       control_output.tau_J[i] = lowpassFilter(kDeltaT, control_output.tau_J[i],
                                               robot_state.tau_J_d[i], cutoff_frequency_);
     }
   }
-  logArray(control_output.tau_J,  "After lowpass   : control_output.tau_J");
-  std::cout <<  __FILE__ << __LINE__ << std::endl;
-
   if (limit_rate_) {
     control_output.tau_J = limitRate(kMaxTorqueRate, control_output.tau_J, robot_state.tau_J_d);
   }
-  logArray(control_output.tau_J, "After limit rate: control_output.tau_J");
-  std::cout <<  __FILE__ << __LINE__ << std::endl;
-
   command->tau_J_d = control_output.tau_J;
   checkFinite(command->tau_J_d);
-  std::cout << "out spinControl - finished?:" << control_output.motion_finished << __FILE__ << __LINE__ << std::endl;
   return !control_output.motion_finished;
 }
-
 
 template <typename T>
 bool ControlLoop<T>::spinMotion(const RobotState& robot_state,
                                 franka::Duration time_step,
                                 research_interface::robot::MotionGeneratorCommand* command) {
   ZoneScoped;
-  std::cout << "in spinMotion" << __FILE__ << __LINE__ << std::endl;
+
   T motion_output = motion_callback_(robot_state, time_step);
   convertMotion(motion_output, robot_state, command);
-
-  logArray(command->dq_c, "After convertMotion - command->dq_c");
-  std::cout <<  __FILE__ << __LINE__ << std::endl;
-  logArray(robot_state.dq, "After convertMotion - robot_state.dq");
-  std::cout <<  __FILE__ << __LINE__ << std::endl;
-
-  std::cout << "out spinMotion - finished?:" << motion_output.motion_finished << __FILE__ << __LINE__ << std::endl;
   return !motion_output.motion_finished;
 }
 
@@ -248,35 +198,18 @@ void ControlLoop<JointVelocities>::convertMotion(
   ZoneScoped;
 
   command->dq_c = motion.dq;
-  logArray(command->dq_c, "Original - command->dq_c");
-  std::cout <<  __FILE__ << __LINE__ << std::endl;
-
   if (cutoff_frequency_ < kMaxCutoffFrequency) {
     for (size_t i = 0; i < 7; i++) {
       command->dq_c[i] =
           lowpassFilter(kDeltaT, command->dq_c[i], robot_state.dq_d[i], cutoff_frequency_);
     }
   }
-
-  logArray(command->dq_c, "After lowpass velocity - command->dq_c");
-  std::cout <<  __FILE__ << __LINE__ << std::endl;
-
   if (limit_rate_) {
     command->dq_c =
         limitRate(computeUpperLimitsJointVelocity(robot_state.q_d),
                   computeLowerLimitsJointVelocity(robot_state.q_d), kMaxJointAcceleration,
                   kMaxJointJerk, command->dq_c, robot_state.dq_d, robot_state.ddq_d);
   }
-  logArray(robot_state.q_d,  "robot_state.q_d  ");
-  std::cout <<  __FILE__ << __LINE__ << std::endl;
-  logArray(robot_state.dq_d, "robot_state.dq_d ");
-  std::cout <<  __FILE__ << __LINE__ << std::endl;
-  logArray(robot_state.ddq_d, "robot_state.ddq_d");
-  std::cout <<  __FILE__ << __LINE__ << std::endl;
-
-  logArray(command->dq_c, "After limit rate velocity - command->dq_c");
-  std::cout <<  __FILE__ << __LINE__ << std::endl;
-
   checkFinite(command->dq_c);
 }
 

@@ -63,7 +63,7 @@ int main(int argc, char* argv[]) {
     auto torque_control_cb = [&](const franka::RobotState& robot_state,
                                  franka::Duration) -> franka::Torques {
       ZoneScopedN("torque_control_cb");
-      if (++count < 10) {
+      if (++count < 30) {
         return torques;
       }
       LOG_INFO_ARRAY("Final q", robot_state.q);

@@ -4,8 +4,6 @@
 #include <franka/active_motion_generator.h>
 #include <franka/active_torque_control.h>
 #include <franka/robot.h>
-#include <iostream>
-
 
 #include <tracy/Tracy.hpp>
 #include <utility>
@@ -70,7 +68,6 @@ void Robot::control(std::function<Torques(const RobotState&, franka::Duration)> 
                                       return {{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}};
                                     },
                                     limit_rate, cutoff_frequency);
-  std::cout << "Robot::control - JointVelocities - Starting control loop" << __FILE__ << __LINE__ << std::endl;
   loop();
 }
 

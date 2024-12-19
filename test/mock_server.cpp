@@ -170,9 +170,7 @@ void MockServer<C>::serverThread() {
   std::cout << "thread started" << std::endl;
   while (!shutdown_) {
     ZoneScopedN("server_loop");
-    std::cout << "server_loop" << std::endl;
     cv_.wait(lock, [this] { return continue_ || shutdown_; });
-    std::cout << "server_loop pass cv" << std::endl;
     while (!commands_.empty()) {
       auto callback = commands_.front().second;
       commands_.pop_front();
@@ -204,8 +202,6 @@ void MockServer<C>::serverThread() {
 
 template <typename C>
 void MockServer<C>::UdpOnlyThread() {
-  std::cout << "UdpOnlyThread" << std::endl;
-
   while (!shutdown_) {
     ZoneScopedN("UdpOnlyThread");
     if (!udp_commands_.empty()) {
@@ -217,18 +213,10 @@ void MockServer<C>::UdpOnlyThread() {
 
     std::cout << "UdpOnlyThread: Empty" << std::endl;
 
-    std::chrono::microseconds duration(10);
+    std::chrono::microseconds duration(100);
     std::this_thread::sleep_for(duration);
   }
 }
-
-template <typename C>
-void MockServer<C>::UdpAndTcpThread() {
-  std::cout << "UdpAndTcpThread" << std::endl;
-  std::cout << "UdpAndTcpThreadDone" << std::endl;
-}
-
-
 
 template <typename C>
 MockServer<C>& MockServer<C>::generic(

@@ -26,6 +26,8 @@ bool ForwardDynamicsBackend::updateRobotState(research_interface::robot::RobotSt
     state.tau_J[i] = robot_state_.tau(i);
     state.tau_J_d[i] = robot_state_.tau(i);
   }
+  std::cout << "UpdateRobotState - robot_state_.q: " << robot_state_.q.transpose() << std::endl;
+
   return true;
 }
 
@@ -37,6 +39,7 @@ bool ForwardDynamicsBackend::updateRobotCommand(
     tau[i] = cmd.control.tau_J_d[i];
   }
   std::lock_guard<std::mutex> lck(mut_);
+  std::cout << "updateRobotCommand - robot_state_.q: " << robot_state_.q.transpose() << std::endl;
   robot_state_ = aescape::updateRobotState(model_, robot_state_, tau, kDeltaTime);
   return true;
 }

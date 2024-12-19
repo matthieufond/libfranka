@@ -20,8 +20,6 @@
 #include "logger.h"
 #include "network.h"
 #include "robot_control.h"
-#include  <iostream>
-
 
 namespace franka {
 
@@ -324,8 +322,6 @@ template <>
 inline void Robot::Impl::handleCommandResponse<research_interface::robot::StopMove>(
     const research_interface::robot::StopMove::Response& response) const {
   using namespace std::string_literals;  // NOLINT(google-build-using-namespace)
-  std::cout << "handleCommandResponse<research_interface::robot::StopMove>" << std::endl;
-
 
   ZoneScoped;
 
