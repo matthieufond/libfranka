@@ -73,6 +73,9 @@ class MockServer {
   template <typename T>
   MockServer& onSendUDP(std::function<void(T&)> on_send_udp);
 
+  template <typename T>
+  MockServer& onSendUDPSeparateThread(std::function<void(T&)> on_send_udp);
+
   MockServer& onReceiveRobotCommand(
       ReceiveRobotCommandCallbackT on_receive_robot_command = ReceiveRobotCommandCallbackT());
 
@@ -112,6 +115,9 @@ class MockServer {
   template <typename T>
   MockServer& onSendUDP(std::function<T()> on_send_udp);
 
+  template <typename T>
+  MockServer& onSendUDPSeparateThread(std::function<T()> on_send_udp);
+
   std::condition_variable_any cv_;
   std::mutex command_mutex_;
   std::mutex tcp_mutex_;
@@ -128,6 +134,7 @@ class MockServer {
   std::string ip_;
 
   std::deque<std::pair<std::string, std::function<void(Socket&, Socket&)>>> commands_;
+  std::deque<std::pair<std::string, std::function<void(Socket&, Socket&)>>> udp_commands_;
 
   MockServer& doForever(std::function<bool()> callback,
                         typename decltype(MockServer::commands_)::iterator it);
@@ -219,6 +226,35 @@ MockServer<C>& MockServer<C>::onSendUDP(std::function<void(T&)> on_send_udp) {
   ZoneScopedN("onSendUDP_2");
 
   return onSendUDP<T>([=]() {
+    T state{};
+    state.message_id = ++sequence_number_;
+    if (on_send_udp) {
+      on_send_udp(state);
+    }
+    return state;
+  });
+}
+
+template <typename C>
+template <typename T>
+MockServer<C>& MockServer<C>::onSendUDPSeparateThread(std::function<T()> on_send_udp) {
+  ZoneScoped;
+
+  std::lock_guard<std::mutex> _(command_mutex_);
+  udp_commands_.emplace_back("onSendUDP", [=](Socket&, Socket& udp_socket) {
+    T state = on_send_udp();
+    udp_socket.sendBytes(&state, sizeof(state));
+  });
+  block_ = true;
+  return *this;
+}
+
+template <typename C>
+template <typename T>
+MockServer<C>& MockServer<C>::onSendUDPSeparateThread(std::function<void(T&)> on_send_udp) {
+  ZoneScopedN("onSendUDPSeparateThread_2");
+
+  return onSendUDPSeparateThread<T>([=]() {
     T state{};
     state.message_id = ++sequence_number_;
     if (on_send_udp) {
