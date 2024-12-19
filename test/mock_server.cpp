@@ -167,7 +167,6 @@ void MockServer<C>::serverThread() {
   // todo: start two threads, one for tcp and one for udp
   auto udp_only_command_thread_ = std::thread(&MockServer<C>::UdpOnlyThread, this);
 
-  std::cout << "thread started" << std::endl;
   while (!shutdown_) {
     ZoneScopedN("server_loop");
     cv_.wait(lock, [this] { return continue_ || shutdown_; });
@@ -206,13 +205,9 @@ void MockServer<C>::UdpOnlyThread() {
     ZoneScopedN("UdpOnlyThread");
     if (!udp_commands_.empty()) {
       auto callback = udp_commands_.front().second;
-      std::cout << "UdpOnlyThread: callback: " <<  udp_commands_.front().first << std::endl;
       udp_commands_.pop_front();
       callback(tcp_socket_wrapper_, udp_socket_wrapper_);
     }
-
-    std::cout << "UdpOnlyThread: Empty" << std::endl;
-
     std::chrono::microseconds duration(100);
     std::this_thread::sleep_for(duration);
   }
