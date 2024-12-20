@@ -129,7 +129,7 @@ class AescapeMockServer : public MockServer<C> {
         [this](const r::RobotCommand& cmd) {
           ZoneScopedN("OnReceiveRobotCommand");
           //LOG_INFO("    -- Received control robot command");
-          std::lock_guard<LockableBase(std::mutex)> state_lck(mut_);
+          std::lock_guard<std::mutex> state_lck(mut_);
           if (cmd.message_id == 0) {
             // TODO(matthieu): Handle timeout
             LOG_INFO("Command timed out, ignoring");
