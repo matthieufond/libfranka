@@ -36,8 +36,10 @@ inline void logArray(const char* filename,
   logMessage(filename, line, level, str);
 }
 
+#define CAT(a,b) a##b
+
 #define TRACY_MESSAGE(var_name, msg, ...) \
-  std::stringstream var_name_ss; \
-  var_name_ss << fmt::format("[{}]", epoch_time_sec()) << fmt::format(msg, ##__VA_ARGS__); \
-  std::string var_name = var_name_ss.str(); \
+  std::stringstream CAT(var_name,SS); \
+  CAT(var_name,SS) << fmt::format("[{}]", epoch_time_sec()) << fmt::format(msg, ##__VA_ARGS__); \
+  std::string var_name = CAT(var_name,SS).str(); \
   TracyMessage(var_name.c_str(), var_name.size());
