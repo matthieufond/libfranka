@@ -150,7 +150,7 @@ get_target_property(TESTS run_all_tests SOURCES)
 set(ASan_FLAGS -g -O1 -fsanitize=address)
 set(UBSan_FLAGS -g -O1 -fsanitize=undefined -fno-sanitize=alignment -fno-sanitize-recover=undefined)
 set(TSan_FLAGS -g -O1 -fsanitize=thread)
-# set(SANITIZERS ASan UBSan TSan)
+set(SANITIZERS ASan UBSan TSan)
 
 foreach(sanitizer ${SANITIZERS})
   set(sanitizer_flags "${${sanitizer}_FLAGS}")
