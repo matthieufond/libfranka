@@ -8,7 +8,7 @@
 namespace aescape {
 class ForwardDynamicsBackend : public BackendInterface {
  public:
-  const double kDeltaTime = 0.001; // time step. Assume to run at 1000Hz.
+  const double kDeltaTime = 0.001;  // time step. Assume to run at 1000Hz.
 
   // Constructor to build the model with the model neutral joint positions
   explicit ForwardDynamicsBackend(const std::string& urdf_path);

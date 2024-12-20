@@ -86,7 +86,8 @@ class AescapeMockServer : public MockServer<C> {
       uint32_t sequence_number = 0,
       std::string ip = "127.0.0.1")
       : MockServer<C>(on_connect, sequence_number, std::move(ip)), robot_backend_(robot_backend), state_send_rate_hz_(state_send_rate_hz)  {
-        testRobotStateIsZero(franka::convertRobotState(state_));
+        // Grab initial state from backend
+        robot_backend_->updateRobotState(state_);
 
       }
 

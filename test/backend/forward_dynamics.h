@@ -1,28 +1,15 @@
 #pragma once
 
 #include <pinocchio/multibody/model.hpp>
+#include "common.h"
 
 namespace aescape {
-
-constexpr int kNumJoints = 7;
-
 /*
  * Inertia matrix method to use for forward dynamics
  */
 enum class InertiaMatrixMethod {
   kABA,
   kCRBA,
-};
-
-/*
- * Robot state containing joint positions, velocities, accelerations and torques
- */
-struct RobotState {
-  Eigen::VectorXd q{Eigen::VectorXd::Zero(kNumJoints)};    // joint positions
-  Eigen::VectorXd dq{Eigen::VectorXd::Zero(kNumJoints)};   // joint velocities
-  Eigen::VectorXd ddq{Eigen::VectorXd::Zero(kNumJoints)};  // joint accelerations
-  Eigen::VectorXd tau{Eigen::VectorXd::Zero(kNumJoints)};  // joint torques
-  Eigen::VectorXd tau_total{Eigen::VectorXd::Zero(kNumJoints)};  // total torques
 };
 
 /*

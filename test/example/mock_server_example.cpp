@@ -2,10 +2,11 @@
 #include <mutex>
 
 #include <backend/forward_dynamics_backend.h>
+#include <backend/proportional_controller_backend.h>
 #include <franka/robot_model.h>
-#include "aescape_mock_server.h"
 #include <magic_enum.hpp>
 #include <tracy/Tracy.hpp>
+#include "aescape_mock_server.h"
 
 /*
  * Mock Server Example
@@ -13,8 +14,8 @@
  * from the franka::robot class.
  */
 
-
-const std::string kUrdfPath = std::string(FRANKA_TEST_SOURCE_DIR) + "/fr3.urdf";
+const std::string kUrdfPath =
+    std::string(FRANKA_TEST_SOURCE_DIR) + "/aescape_simulation_panda.urdf";
 constexpr size_t kControlLoopCount = 4;
 /*
  * Read a file to a string
@@ -51,7 +52,10 @@ int main(int argc, char* argv[]) {
     return RobotTypes::Connect::Response(RobotTypes::Connect::Status::kSuccess);
   };
 
-  AescapeMockServer<RobotTypes> server(std::make_shared<aescape::ForwardDynamicsBackend>(kUrdfPath),
+  // Set initial state
+  Eigen::VectorXd q(kNumJoints);
+  q << 0.054, -1.225, -0.008, -1.820, -0.019, 0.697, -0.021;  //Idle pose
+  AescapeMockServer<RobotTypes> server(std::make_shared<aescape::ProportionalControllerBackend>(q),
                                        1000, on_conn, 0, std::string(argv[1]));
 
   std::unique_lock<std::mutex> lck(mut);
@@ -125,7 +129,8 @@ int main(int argc, char* argv[]) {
           })
       .spinOnce();
 
-  LOG_INFO("--- Read current state ->readOnce (Handle by update thread)");  // Can miss. Try twice here.
+  LOG_INFO(
+      "--- Read current state ->readOnce (Handle by update thread)");  // Can miss. Try twice here.
 
   LOG_INFO("--- Run control loop ->control");
   LOG_INFO(" ++ ControlLoop Constructor");
@@ -139,7 +144,7 @@ int main(int argc, char* argv[]) {
   LOG_INFO(" ++ operator()()");
 
   std::this_thread::sleep_for(std::chrono::milliseconds(2));
-  
+
   server.stateLoop();
 
   LOG_INFO("    -- Finish control callback loop");
@@ -151,9 +156,11 @@ int main(int argc, char* argv[]) {
   LOG_INFO("    -- Finish robot.finishMotion");
 
   LOG_INFO("--- Stop");
-  server.waitForCommand<r::StopMove>([](const r::StopMove::Request&) {
-    LOG_INFO(" ++ Received StopMove");
-    return r::StopMove::Response(r::StopMove::Status::kSuccess);
-  }).spinOnce();
+  server
+      .waitForCommand<r::StopMove>([](const r::StopMove::Request&) {
+        LOG_INFO(" ++ Received StopMove");
+        return r::StopMove::Response(r::StopMove::Status::kSuccess);
+      })
+      .spinOnce();
   LOG_INFO("DONE");
 }

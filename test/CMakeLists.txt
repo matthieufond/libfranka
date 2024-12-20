@@ -82,11 +82,14 @@ add_test(Default run_all_tests --gtest_output=xml:${TEST_OUTPUT_DIR}/default.xml
 
 ## Aescape Backend Library
 add_library(aescape_backend SHARED
+  backend/common.h
   backend/forward_dynamics.h
   backend/forward_dynamics.cpp
   backend/backend_interface.h
   backend/forward_dynamics_backend.h
   backend/forward_dynamics_backend.cpp
+  backend/proportional_controller_backend.h
+  backend/proportional_controller_backend.cpp
 )
 target_link_libraries(aescape_backend PUBLIC ${TEST_DEPENDENCIES})
 

@@ -64,6 +64,7 @@ TEST_F(ForwardDynamicsTests, TorqueOnJoint) {
   for (size_t joint = 0; joint < kNumJoints; ++joint) {
     RobotState robot_state;
     robot_state.q = pinocchio::randomConfiguration(model_);
+    robot_state.q = robot_state.q.cwiseMax(kQMin).cwiseMin(kQMax);
 
     Eigen::VectorXd tau = Eigen::VectorXd::Zero(kNumJoints);
     tau[joint] += 0.1;
