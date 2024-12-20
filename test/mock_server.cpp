@@ -1,6 +1,7 @@
 // Copyright (c) 2023 Franka Robotics GmbH
 // Use of this source code is governed by the Apache-2.0 license, see LICENSE
 #include "mock_server.h"
+#include "logging_macros.h"
 
 #include <sstream>
 
@@ -58,6 +59,30 @@ MockServer<C>& MockServer<C>::onReceiveRobotCommand(
   });
   return *this;
 }
+
+template <typename C>
+MockServer<C>& MockServer<C>::onReceiveRobotCommandSeparateQueue(
+    ReceiveRobotCommandCallbackT on_receive_robot_command) {
+  ZoneScoped;
+
+  std::lock_guard<std::mutex> _(udp_command_mutex_);
+  udp_commands_.emplace_back("onReceiveRobotCommandSeparateQueue", [=](Socket&, Socket& udp_socket) {
+    research_interface::robot::RobotCommand robot_command;
+    do {
+      ZoneScopedN("RcvOneUDPCommand");
+      robot_command.message_id = 0;
+      udp_socket.receiveBytes(&robot_command, sizeof(robot_command));
+
+      TRACY_MESSAGE(msg, "sequence_number:{},robot_command.message_id:{}", MockServer<C>::sequenceNumber(), robot_command.message_id);
+    } while (robot_command.message_id < sequenceNumber() && robot_command.message_id != 0);
+    if (on_receive_robot_command) {
+      on_receive_robot_command(robot_command);
+    }
+  });
+  udp_cv_.notify_one();
+  return *this;
+}
+
 
 template <typename C>
 MockServer<C>& MockServer<C>::spinOnce() {
@@ -126,12 +151,12 @@ void MockServer<C>::serverThread() {
   udp_socket.setReceiveTimeout(Poco::Timespan(0, 1000));
   Socket udp_socket_wrapper;
   udp_socket_wrapper.sendBytes = [&](const void* data, size_t size) {
-    //std::lock_guard<std::mutex> _(udp_mutex_);
+    std::lock_guard<std::mutex> _(udp_mutex_);
     int rv = udp_socket.sendTo(data, size, {remote_address.host(), udp_port});
     ASSERT_EQ(static_cast<int>(size), rv) << "Send error on UDP socket";
   };
   udp_socket_wrapper.receiveBytes = [&](void* data, size_t size) {
-    //std::lock_guard<std::mutex> _(udp_mutex_);
+    std::lock_guard<std::mutex> _(udp_mutex_);
     try {
       int rv = udp_socket.receiveFrom(data, size, remote_address);
       ASSERT_EQ(static_cast<int>(size), rv) << "Receive error on UDP socket";
@@ -140,23 +165,32 @@ void MockServer<C>::serverThread() {
     }
   };
 
+  tcp_socket_wrapper_ = tcp_socket_wrapper;
+  udp_socket_wrapper_ = udp_socket_wrapper;
+
   sendInitialState(udp_socket_wrapper);
+
+  std::cout << "Starting two threads to handle commands" << std::endl;
+
+  // todo: start two threads, one for tcp and one for udp
+  auto udp_only_command_thread_ = std::thread(&MockServer<C>::UdpOnlyThread, this);
 
   while (!shutdown_) {
     ZoneScopedN("server_loop");
-
     cv_.wait(lock, [this] { return continue_ || shutdown_; });
     while (!commands_.empty()) {
       auto callback = commands_.front().second;
       commands_.pop_front();
       lock.unlock();
-      callback(tcp_socket_wrapper, udp_socket_wrapper);
+      callback(tcp_socket_wrapper_, udp_socket_wrapper_);
       lock.lock();
     }
 
     continue_ = false;
     cv_.notify_one();
   }
+  
+  udp_only_command_thread_.join();
 
   if (!ignore_udp_buffer_) {
     EXPECT_FALSE(udp_socket.poll(Poco::Timespan(), Poco::Net::Socket::SelectMode::SELECT_READ))
@@ -170,6 +204,26 @@ void MockServer<C>::serverThread() {
 
     int rv = tcp_socket.receiveBytes(buffer.data(), buffer.size());
     EXPECT_EQ(0, rv) << "TCP socket still has data";
+  }
+}
+
+template <typename C>
+void MockServer<C>::UdpOnlyThread() {
+  std::unique_lock<std::mutex> udp_cmd_lck(udp_command_mutex_);
+  while (!shutdown_) {
+    ZoneScopedN("UdpOnlyThread");
+
+    {
+      ZoneScopedN("WaitForUDPCommands");
+      udp_cv_.wait(udp_cmd_lck, [this]{return !udp_commands_.empty();});
+    }
+    while (!udp_commands_.empty()) {
+      auto callback = udp_commands_.front().second;
+      udp_commands_.pop_front();
+      udp_cmd_lck.unlock();
+      callback(tcp_socket_wrapper_, udp_socket_wrapper_);
+      udp_cmd_lck.lock();
+    }
   }
 }
 

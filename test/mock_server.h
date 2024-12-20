@@ -73,7 +73,13 @@ class MockServer {
   template <typename T>
   MockServer& onSendUDP(std::function<void(T&)> on_send_udp);
 
+  template <typename T>
+  MockServer& onSendUDPSeparateQueue(std::function<void(T&)> on_send_udp);
+
   MockServer& onReceiveRobotCommand(
+      ReceiveRobotCommandCallbackT on_receive_robot_command = ReceiveRobotCommandCallbackT());
+
+  MockServer& onReceiveRobotCommandSeparateQueue(
       ReceiveRobotCommandCallbackT on_receive_robot_command = ReceiveRobotCommandCallbackT());
 
   MockServer& generic(std::function<void(Socket&, Socket&)> generic_command);
@@ -107,13 +113,20 @@ class MockServer {
 
  private:
   void serverThread();
+  void UdpOnlyThread();
+
   void sendInitialState(Socket& udp_socket);
 
   template <typename T>
   MockServer& onSendUDP(std::function<T()> on_send_udp);
 
+  template <typename T>
+  MockServer& onSendUDPSeparateQueue(std::function<T()> on_send_udp);
+
   std::condition_variable_any cv_;
   std::mutex command_mutex_;
+  std::condition_variable_any udp_cv_;
+  std::mutex udp_command_mutex_;
   std::mutex tcp_mutex_;
   std::mutex udp_mutex_;
   std::thread server_thread_;
@@ -127,7 +140,11 @@ class MockServer {
   const ConnectCallbackT on_connect_;
   std::string ip_;
 
+  Socket tcp_socket_wrapper_;
+  Socket udp_socket_wrapper_;
+
   std::deque<std::pair<std::string, std::function<void(Socket&, Socket&)>>> commands_;
+  std::deque<std::pair<std::string, std::function<void(Socket&, Socket&)>>> udp_commands_;
 
   MockServer& doForever(std::function<bool()> callback,
                         typename decltype(MockServer::commands_)::iterator it);
@@ -219,6 +236,35 @@ MockServer<C>& MockServer<C>::onSendUDP(std::function<void(T&)> on_send_udp) {
   ZoneScopedN("onSendUDP_2");
 
   return onSendUDP<T>([=]() {
+    T state{};
+    state.message_id = ++sequence_number_;
+    if (on_send_udp) {
+      on_send_udp(state);
+    }
+    return state;
+  });
+}
+
+template <typename C>
+template <typename T>
+MockServer<C>& MockServer<C>::onSendUDPSeparateQueue(std::function<T()> on_send_udp) {
+  ZoneScoped;
+
+  std::lock_guard<std::mutex> _(udp_command_mutex_);
+  udp_commands_.emplace_back("onSendUDPSeparateQueue", [=](Socket&, Socket& udp_socket) {
+    T state = on_send_udp();
+    udp_socket.sendBytes(&state, sizeof(state));
+  });
+  udp_cv_.notify_one();
+  return *this;
+}
+
+template <typename C>
+template <typename T>
+MockServer<C>& MockServer<C>::onSendUDPSeparateQueue(std::function<void(T&)> on_send_udp) {
+  ZoneScopedN("onSendUDPSeparateQueue_2");
+
+  return onSendUDPSeparateQueue<T>([=]() {
     T state{};
     state.message_id = ++sequence_number_;
     if (on_send_udp) {
