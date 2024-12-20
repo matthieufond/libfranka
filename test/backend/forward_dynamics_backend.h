@@ -6,7 +6,7 @@
 #include <pinocchio/multibody/model.hpp>
 
 namespace aescape {
-class ForwardDynamicsBackend : public BackendInterface {
+class ForwardDynamicsBackend final : public BackendInterface {
  public:
   const double kDeltaTime = 0.001;  // time step. Assume to run at 1000Hz.
 

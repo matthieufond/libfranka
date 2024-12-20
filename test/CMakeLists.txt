@@ -45,28 +45,28 @@ list(APPEND TEST_DEPENDENCIES fcimodels)
 
 ## Test runner
 add_executable(run_all_tests
-  # active_motion_generator_tests.cpp
-  # active_torque_control_tests.cpp
-  # calculations_tests.cpp
-  # control_loop_tests.cpp
-  # control_types_tests.cpp
-  # duration_tests.cpp
-  # errors_tests.cpp
-  # gripper_command_tests.cpp
-  # gripper_tests.cpp
-  # helpers.cpp
-  # logger_tests.cpp
-  # lowpass_filter_tests.cpp
+  active_motion_generator_tests.cpp
+  active_torque_control_tests.cpp
+  calculations_tests.cpp
+  control_loop_tests.cpp
+  control_types_tests.cpp
+  duration_tests.cpp
+  errors_tests.cpp
+  gripper_command_tests.cpp
+  gripper_tests.cpp
+  helpers.cpp
+  logger_tests.cpp
+  lowpass_filter_tests.cpp
   mock_server.cpp
-  # model_tests.cpp
-  # rate_limiting_tests.cpp
-  # robot_command_tests.cpp
-  # robot_impl_tests.cpp
+  model_tests.cpp
+  rate_limiting_tests.cpp
+  robot_command_tests.cpp
+  robot_impl_tests.cpp
   robot_model_tests.cpp
-  # robot_state_tests.cpp
-  # robot_tests.cpp
-  # vacuum_gripper_tests.cpp
-  # vacuum_gripper_command_tests.cpp
+  robot_state_tests.cpp
+  robot_tests.cpp
+  vacuum_gripper_tests.cpp
+  vacuum_gripper_command_tests.cpp
 )
 
 set(TEST_COMPILE_DEFINITIONS FRANKA_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}" FRANKA_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
@@ -150,7 +150,7 @@ get_target_property(TESTS run_all_tests SOURCES)
 set(ASan_FLAGS -g -O1 -fsanitize=address)
 set(UBSan_FLAGS -g -O1 -fsanitize=undefined -fno-sanitize=alignment -fno-sanitize-recover=undefined)
 set(TSan_FLAGS -g -O1 -fsanitize=thread)
-# set(SANITIZERS ASan UBSan TSan)
+set(SANITIZERS ASan UBSan TSan)
 
 foreach(sanitizer ${SANITIZERS})
   set(sanitizer_flags "${${sanitizer}_FLAGS}")

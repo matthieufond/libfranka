@@ -14,7 +14,7 @@ constexpr double kDefaultKp = 0.01;  // Default proportional gain. 1.0 in the co
  * Treat tau as position error. First reverse the stiffness gain and then
  * scaled tau by a given proportional gain.
  */
-class ProportionalControllerBackend : public BackendInterface {
+class ProportionalControllerBackend final: public BackendInterface {
  public:
   explicit ProportionalControllerBackend(double kp = kDefaultKp);
 

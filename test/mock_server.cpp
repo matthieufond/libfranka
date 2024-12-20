@@ -1,6 +1,7 @@
 // Copyright (c) 2023 Franka Robotics GmbH
 // Use of this source code is governed by the Apache-2.0 license, see LICENSE
 #include "mock_server.h"
+#include "logging_macros.h"
 
 #include <sstream>
 
@@ -72,9 +73,7 @@ MockServer<C>& MockServer<C>::onReceiveRobotCommandSeparateQueue(
       robot_command.message_id = 0;
       udp_socket.receiveBytes(&robot_command, sizeof(robot_command));
 
-      char msg[128];
-      sprintf(msg, "ts:%f,sequence_number:%llu,robot_command.message_id:%llu",std::chrono::steady_clock::now().time_since_epoch().count() / 1e9, sequenceNumber(), robot_command.message_id);
-      TracyMessage(msg, strlen(msg));
+      TRACY_MESSAGE(msg, "sequence_number:{},robot_command.message_id:{}", MockServer<C>::sequenceNumber(), robot_command.message_id);
     } while (robot_command.message_id < sequenceNumber() && robot_command.message_id != 0);
     if (on_receive_robot_command) {
       on_receive_robot_command(robot_command);
