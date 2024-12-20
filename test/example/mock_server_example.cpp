@@ -26,6 +26,6 @@ int main(int argc, char* argv[]) {
   Eigen::VectorXd q(kNumJoints);
   q << 0.054, -1.225, -0.008, -1.820, -0.019, 0.697, -0.021;  //Idle pose
   AescapeMockServer<RobotTypes> server(std::make_shared<aescape::ProportionalControllerBackend>(q),
-                                       1000, on_conn, 0, std::string(argv[1]));
+                                       1000, kUrdfPath, 0, std::string(argv[1]));
   server.run();
 }
