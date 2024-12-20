@@ -113,10 +113,15 @@ class MockServer {
 
  private:
   void serverThread();
+  void UdpOnlyThread();
+
   void sendInitialState(Socket& udp_socket);
 
   template <typename T>
   MockServer& onSendUDP(std::function<T()> on_send_udp);
+
+  template <typename T>
+  MockServer& onSendUDPSeparateQueue(std::function<T()> on_send_udp);
 
   std::condition_variable_any cv_;
   std::mutex command_mutex_;
@@ -245,12 +250,12 @@ template <typename T>
 MockServer<C>& MockServer<C>::onSendUDPSeparateQueue(std::function<T()> on_send_udp) {
   ZoneScoped;
 
-  std::lock_guard<std::mutex> _(command_mutex_);
+  std::lock_guard<std::mutex> _(udp_command_mutex_);
   udp_commands_.emplace_back("onSendUDPSeparateQueue", [=](Socket&, Socket& udp_socket) {
     T state = on_send_udp();
     udp_socket.sendBytes(&state, sizeof(state));
   });
-  block_ = true;
+  udp_cv_.notify_one();
   return *this;
 }
 

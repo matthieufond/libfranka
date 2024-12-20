@@ -59,6 +59,7 @@ int main(int argc, char* argv[]) {
     cv.wait(lck);
   }
   lck.unlock();
+  server.startUpdateThread();
 
   // Prepare for load model
   std::ifstream model_library_stream(
@@ -136,13 +137,15 @@ int main(int argc, char* argv[]) {
   LOG_INFO(" ++ ControlLoop Constructor DONE");
 
   LOG_INFO(" ++ operator()()");
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(2));
   
   server.stateLoop();
+
   LOG_INFO("    -- Finish control callback loop");
 
   LOG_INFO("    -- Start robot.finishMotion");
   server.handleReadOnce()
-      .spinOnce()
       .respondMove()  // No request. Only waiting for response.
       .spinOnce();
   LOG_INFO("    -- Finish robot.finishMotion");

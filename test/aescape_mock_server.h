@@ -87,7 +87,6 @@ class AescapeMockServer : public MockServer<C> {
       std::string ip = "127.0.0.1")
       : MockServer<C>(on_connect, sequence_number, std::move(ip)), robot_backend_(robot_backend), state_send_rate_hz_(state_send_rate_hz)  {
         testRobotStateIsZero(franka::convertRobotState(state_));
-        startUpdateThread();
 
       }
 
@@ -106,6 +105,10 @@ class AescapeMockServer : public MockServer<C> {
           std::lock_guard<std::mutex> lck(mut_);
           // Set server local state_.message_id to the server's sequence number (which is what is being sent to client)
           // the message_id is set from the sequence number in onSendUDP()
+          char msg[128];
+          sprintf(msg, "ts:%f,sequence_number:%ul,robot_state.message_id:%ul",std::chrono::steady_clock::now().time_since_epoch().count() / 1e9, MockServer<C>::sequenceNumber(), robot_state.message_id);
+          TracyMessage(msg, strlen(msg));
+
           state_.message_id = robot_state.message_id;
           robot_state = state_;
           // Mode
@@ -122,12 +125,16 @@ class AescapeMockServer : public MockServer<C> {
   AescapeMockServer& handleUpdate() {
     ZoneScoped;
 
-    handleReadOnce().spinOnce().onReceiveRobotCommandSeparateQueue(
+    handleReadOnce().onReceiveRobotCommandSeparateQueue(
         [this](const r::RobotCommand& cmd) {
           ZoneScopedN("OnReceiveRobotCommand");
-          // TODO(matthieu): Handle timeout
           //LOG_INFO("    -- Received control robot command");
-          std::lock_guard<std::mutex> state_lck(mut_);
+          std::lock_guard<LockableBase(std::mutex)> state_lck(mut_);
+          if (cmd.message_id == 0) {
+            // TODO(matthieu): Handle timeout
+            LOG_INFO("Command timed out, ignoring");
+            return;
+          }
           if (cmd.motion.motion_generation_finished) {
             LOG_INFO("    -- Motion generation finished");
             modes_.motion_mode = r::MotionGeneratorMode::kIdle;
@@ -135,7 +142,6 @@ class AescapeMockServer : public MockServer<C> {
             stopped_ = true;
           } else {
             cmd_ = cmd;
-            std::cout << "cmd.msg_id " << cmd.message_id << " state.msg_id " << state_.message_id << std::endl;
           }
           cv_.notify_all();
         });
@@ -158,6 +164,9 @@ class AescapeMockServer : public MockServer<C> {
           LOG_INFO("    -- Move Received: Controller Mode: {}, Motion Mode: {}",
                    magic_enum::enum_name(modes_.ctrl_mode),
                    magic_enum::enum_name(modes_.motion_mode));
+
+          // Stop Update Thread
+          stopUpdateLoop();
 
           return moveSuccessResp();
         },
@@ -185,13 +194,10 @@ class AescapeMockServer : public MockServer<C> {
 
   void updateLoop() {
     ZoneScoped;
-    while (!destructor_called_) {
-      // Run without update if we are not in state loop and not stopped
-      while (!in_state_loop_ && !destructor_called_) {
-        handleReadOnce();
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-      }
-      std::this_thread::sleep_for(std::chrono::microseconds(10));
+    // Run without update if we are not in state loop and not stopped
+    while (!in_state_loop_) {
+      handleReadOnce();
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
   }
 
@@ -214,7 +220,7 @@ class AescapeMockServer : public MockServer<C> {
 
       auto deadline = std::chrono::microseconds(++cycles*dt_us) + init_time;
 
-      handleUpdate().spinOnce();
+      handleUpdate();
 
       // Wait until we receive a new command or timeout
 
@@ -222,6 +228,9 @@ class AescapeMockServer : public MockServer<C> {
 
       {
         ZoneScopedN("Wait for command notify");
+        char msg[128];
+        sprintf(msg, "[%f]sequence_number:%ul, robot_command.message_id:%ul", std::chrono::steady_clock::now().time_since_epoch().count() / 1e9, MockServer<C>::sequenceNumber(), cmd_.message_id);
+        TracyMessage(msg, strlen(msg));
         cv_.wait_until(mut, deadline, [this]{return cmd_.message_id == MockServer<C>::sequenceNumber();});
       }
 
@@ -256,6 +265,11 @@ class AescapeMockServer : public MockServer<C> {
     LOG_INFO("getting out of state loop");
     in_state_loop_ = false;
 
+  }
+
+  void stopUpdateLoop() {
+    in_state_loop_ = true;
+    //update_thread_.join();
   }
 
   ~AescapeMockServer() 

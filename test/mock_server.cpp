@@ -64,14 +64,23 @@ MockServer<C>& MockServer<C>::onReceiveRobotCommandSeparateQueue(
     ReceiveRobotCommandCallbackT on_receive_robot_command) {
   ZoneScoped;
 
-  std::lock_guard<std::mutex> _(command_mutex_);
+  std::lock_guard<std::mutex> _(udp_command_mutex_);
   udp_commands_.emplace_back("onReceiveRobotCommandSeparateQueue", [=](Socket&, Socket& udp_socket) {
     research_interface::robot::RobotCommand robot_command;
-    udp_socket.receiveBytes(&robot_command, sizeof(robot_command));
+    do {
+      ZoneScopedN("RcvOneUDPCommand");
+      robot_command.message_id = 0;
+      udp_socket.receiveBytes(&robot_command, sizeof(robot_command));
+
+      char msg[128];
+      sprintf(msg, "ts:%f,sequence_number:%llu,robot_command.message_id:%llu",std::chrono::steady_clock::now().time_since_epoch().count() / 1e9, sequenceNumber(), robot_command.message_id);
+      TracyMessage(msg, strlen(msg));
+    } while (robot_command.message_id < sequenceNumber() && robot_command.message_id != 0);
     if (on_receive_robot_command) {
       on_receive_robot_command(robot_command);
     }
   });
+  udp_cv_.notify_one();
   return *this;
 }
 
@@ -204,13 +213,18 @@ void MockServer<C>::UdpOnlyThread() {
   std::unique_lock<std::mutex> udp_cmd_lck(udp_command_mutex_);
   while (!shutdown_) {
     ZoneScopedN("UdpOnlyThread");
-    if (!udp_commands_.empty()) {
+
+    {
+      ZoneScopedN("WaitForUDPCommands");
+      udp_cv_.wait(udp_cmd_lck, [this]{return !udp_commands_.empty();});
+    }
+    while (!udp_commands_.empty()) {
       auto callback = udp_commands_.front().second;
       udp_commands_.pop_front();
+      udp_cmd_lck.unlock();
       callback(tcp_socket_wrapper_, udp_socket_wrapper_);
+      udp_cmd_lck.lock();
     }
-    std::chrono::microseconds duration(100);
-    std::this_thread::sleep_for(duration);
   }
 }
 
