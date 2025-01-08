@@ -1,21 +1,28 @@
 #include <fstream>
 #include <mutex>
 
-#include <backend/forward_dynamics_backend.h>
-#include <backend/proportional_controller_backend.h>
-#include <franka/robot_model.h>
 #include <magic_enum.hpp>
 #include <tracy/Tracy.hpp>
-#include "aescape_mock_server.h"
+
+#include <franka/robot_model.h>
+#include <franka/control_types.h>
+
+#include <franka_mock/backend/forward_dynamics_backend.h>
+#include <franka_mock/backend/proportional_controller_backend.h>
+#include <franka_mock/aescape_mock_server.h>
+#include <franka_mock/server_types.h>
+
+#include "logging_macros.h"
 
 /*
  * Mock Server Example
  * This example demonstrates how to use the MockServer class and respond to different commands
  * from the franka::robot class.
  */
-
 const std::string kUrdfPath =
-    std::string(FRANKA_TEST_SOURCE_DIR) + "/aescape_simulation_panda.urdf";
+    std::string(AESCAPE_MOCK_SOURCE_DIR) + "/resources/aescape_simulation_panda.urdf";
+constexpr int kNumJoints = 7;
+
 
 int main(int argc, char* argv[]) {
   if (argc < 2) {
@@ -25,7 +32,6 @@ int main(int argc, char* argv[]) {
   // Set initial state
   Eigen::VectorXd q(kNumJoints);
   q << 0.054, -1.225, -0.008, -1.820, -0.019, 0.697, -0.021;  //Idle pose
-  AescapeMockServer<RobotTypes> server(std::make_shared<aescape::ProportionalControllerBackend>(q),
-                                       1000, kUrdfPath, 0, std::string(argv[1]));
+  aescape::AescapeMockServer<RobotTypes> server(std::make_shared<aescape::ProportionalControllerBackend>(q), 1000, kUrdfPath, std::string(argv[1]));
   server.run();
 }

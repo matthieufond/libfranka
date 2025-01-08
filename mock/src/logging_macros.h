@@ -9,21 +9,36 @@ inline double epoch_time_sec() {
 }
 
 #define LOG_INFO(str, ...) logMessage(__FILE__, __LINE__, "INFO", str, ##__VA_ARGS__)
+#define LOG_WARN(str, ...) logMessage(__FILE__, __LINE__, "WARN", str, ##__VA_ARGS__)
+#define LOG_ERROR(str, ...) logMessage(__FILE__, __LINE__, "ERROR", str, ##__VA_ARGS__)
+
 template <typename... T>
 void logMessage(const char* filename,
                 int line,
                 const char* level,
                 const std::string& format_str,
                 T&&... args) {
-  std::cout << fmt::format("[{}][{}]{}:{}: ",
-                          epoch_time_sec(),
-                          level,
-                          filename,
-                           line)
-            << fmt::format(format_str, std::forward<T>(args)...) << std::endl;
+  #if __cplusplus >= 202002L
+    std::cout << fmt::format("[{}][{}]{}:{}: ",
+                            epoch_time_sec(),
+                            level,
+                            filename,
+                            line)
+              << fmt::format(fmt::runtime(format_str), std::forward<T>(args)...) << std::endl;
+  #else
+    std::cout << fmt::format("[{}][{}]{}:{}: ",
+                            epoch_time_sec(),
+                            level,
+                            filename,
+                            line)
+              << fmt::format(format_str, std::forward<T>(args)...) << std::endl;
+  #endif
+
 }
 
 #define LOG_INFO_ARRAY(prefix_str, array) logArray(__FILE__, __LINE__, "INFO", prefix_str, array)
+#define LOG_WARN_ARRAY(prefix_str, array) logArray(__FILE__, __LINE__, "WARN", prefix_str, array)
+#define LOG_ERROR_ARRAY(prefix_str, array) logArray(__FILE__, __LINE__, "ERROR", prefix_str, array)
 inline void logArray(const char* filename,
               int line,
               const char* level,

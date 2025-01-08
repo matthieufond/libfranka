@@ -1,8 +1,9 @@
 #pragma once
+#include "backend_interface.h"
+#include <franka_mock/common.h>
+
 #include <Eigen/Core>
 #include <mutex>
-#include "backend_interface.h"
-#include "common.h"
 
 namespace aescape {
 // Same for all joints. StiffnessGain = 100.0 in the control repo.

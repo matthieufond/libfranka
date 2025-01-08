@@ -10,8 +10,6 @@
 #include <string>
 #include <thread>
 
-#include <tracy/Tracy.hpp>
-
 #include <franka/robot_state.h>
 #include <research_interface/gripper/types.h>
 #include <research_interface/robot/rbk_types.h>
@@ -49,10 +47,8 @@ class MockServer {
   using ReceiveRobotCommandCallbackT =
       std::function<void(const research_interface::robot::RobotCommand&)>;
 
-  MockServer(ConnectCallbackT on_connect = ConnectCallbackT(),
-             uint32_t sequence_number = 0,
-             std::string ip = "127.0.0.1");
-  virtual ~MockServer();
+  MockServer(ConnectCallbackT on_connect = ConnectCallbackT(), uint32_t sequence_number = 0);
+  ~MockServer();
 
   template <typename T>
   MockServer& sendEmptyState();
@@ -73,13 +69,7 @@ class MockServer {
   template <typename T>
   MockServer& onSendUDP(std::function<void(T&)> on_send_udp);
 
-  template <typename T>
-  MockServer& onSendUDPSeparateQueue(std::function<void(T&)> on_send_udp);
-
   MockServer& onReceiveRobotCommand(
-      ReceiveRobotCommandCallbackT on_receive_robot_command = ReceiveRobotCommandCallbackT());
-
-  MockServer& onReceiveRobotCommandSeparateQueue(
       ReceiveRobotCommandCallbackT on_receive_robot_command = ReceiveRobotCommandCallbackT());
 
   MockServer& generic(std::function<void(Socket&, Socket&)> generic_command);
@@ -102,7 +92,7 @@ class MockServer {
       std::function<typename T::Response(const typename T::Request&)> callback,
       uint32_t* command_id = nullptr);
 
-  virtual MockServer& spinOnce();
+  MockServer& spinOnce();
 
   template <typename T>
   T randomState();
@@ -113,20 +103,13 @@ class MockServer {
 
  private:
   void serverThread();
-  void UdpOnlyThread();
-
   void sendInitialState(Socket& udp_socket);
 
   template <typename T>
   MockServer& onSendUDP(std::function<T()> on_send_udp);
 
-  template <typename T>
-  MockServer& onSendUDPSeparateQueue(std::function<T()> on_send_udp);
-
   std::condition_variable_any cv_;
   std::mutex command_mutex_;
-  std::condition_variable_any udp_cv_;
-  std::mutex udp_command_mutex_;
   std::mutex tcp_mutex_;
   std::mutex udp_mutex_;
   std::thread server_thread_;
@@ -138,13 +121,7 @@ class MockServer {
   bool ignore_udp_buffer_ = false;
 
   const ConnectCallbackT on_connect_;
-  std::string ip_;
-
-  Socket tcp_socket_wrapper_;
-  Socket udp_socket_wrapper_;
-
   std::deque<std::pair<std::string, std::function<void(Socket&, Socket&)>>> commands_;
-  std::deque<std::pair<std::string, std::function<void(Socket&, Socket&)>>> udp_commands_;
 
   MockServer& doForever(std::function<bool()> callback,
                         typename decltype(MockServer::commands_)::iterator it);
@@ -154,8 +131,6 @@ template <typename C>
 template <typename T>
 MockServer<C>& MockServer<C>::sendResponse(const uint32_t& command_id,
                                            std::function<typename T::Response()> create_response) {
-  ZoneScoped;
-
   using namespace std::string_literals;
 
   std::lock_guard<std::mutex> _(command_mutex_);
@@ -176,8 +151,6 @@ template <typename C>
 template <typename T>
 MockServer<C>& MockServer<C>::queueResponse(const uint32_t& command_id,
                                             std::function<typename T::Response()> create_response) {
-  ZoneScoped;
-
   using namespace std::string_literals;
 
   std::lock_guard<std::mutex> _(command_mutex_);
@@ -196,8 +169,6 @@ MockServer<C>& MockServer<C>::queueResponse(const uint32_t& command_id,
 template <typename C>
 template <typename T>
 MockServer<C>& MockServer<C>::sendEmptyState() {
-  ZoneScoped;
-
   return onSendUDP<T>([=](T& state) { state.message_id = ++sequence_number_; });
 }
 
@@ -205,8 +176,6 @@ template <typename C>
 template <typename T>
 MockServer<C>& MockServer<C>::sendRandomState(std::function<void(T&)> random_generator,
                                               T* sent_state) {
-  ZoneScoped;
-
   return onSendUDP<T>([=](T& state) {
     random_generator(state);
     state.message_id = ++sequence_number_;
@@ -219,8 +188,6 @@ MockServer<C>& MockServer<C>::sendRandomState(std::function<void(T&)> random_gen
 template <typename C>
 template <typename T>
 MockServer<C>& MockServer<C>::onSendUDP(std::function<T()> on_send_udp) {
-  ZoneScoped;
-
   std::lock_guard<std::mutex> _(command_mutex_);
   commands_.emplace_back("onSendUDP", [=](Socket&, Socket& udp_socket) {
     T state = on_send_udp();
@@ -233,38 +200,7 @@ MockServer<C>& MockServer<C>::onSendUDP(std::function<T()> on_send_udp) {
 template <typename C>
 template <typename T>
 MockServer<C>& MockServer<C>::onSendUDP(std::function<void(T&)> on_send_udp) {
-  ZoneScopedN("onSendUDP_2");
-
   return onSendUDP<T>([=]() {
-    T state{};
-    state.message_id = ++sequence_number_;
-    if (on_send_udp) {
-      on_send_udp(state);
-    }
-    return state;
-  });
-}
-
-template <typename C>
-template <typename T>
-MockServer<C>& MockServer<C>::onSendUDPSeparateQueue(std::function<T()> on_send_udp) {
-  ZoneScoped;
-
-  std::lock_guard<std::mutex> _(udp_command_mutex_);
-  udp_commands_.emplace_back("onSendUDPSeparateQueue", [=](Socket&, Socket& udp_socket) {
-    T state = on_send_udp();
-    udp_socket.sendBytes(&state, sizeof(state));
-  });
-  udp_cv_.notify_one();
-  return *this;
-}
-
-template <typename C>
-template <typename T>
-MockServer<C>& MockServer<C>::onSendUDPSeparateQueue(std::function<void(T&)> on_send_udp) {
-  ZoneScopedN("onSendUDPSeparateQueue_2");
-
-  return onSendUDPSeparateQueue<T>([=]() {
     T state{};
     state.message_id = ++sequence_number_;
     if (on_send_udp) {
@@ -278,8 +214,6 @@ template <typename C>
 template <typename T>
 typename T::Request MockServer<C>::receiveRequest(Socket& tcp_socket,
                                                   typename T::Header* header_ptr) {
-  ZoneScoped;
-
   typename T::template Message<typename T::Request> request_message;
   if constexpr (std::is_same<research_interface::robot::GetRobotModel, T>::value) {
     tcp_socket.receiveBytes(&request_message.header, sizeof(request_message.header));
@@ -297,8 +231,6 @@ template <typename T>
 void MockServer<C>::sendResponse(Socket& tcp_socket,
                                  const typename T::Header& header,
                                  const typename T::Response& response) {
-  ZoneScoped;
-
   typename T::template Message<typename T::Response> response_message(header, response);
   tcp_socket.sendBytes(&response_message, sizeof(response_message));
 }
@@ -309,8 +241,6 @@ inline void MockServer<RobotTypes>::sendResponse<research_interface::robot::GetR
     Socket& tcp_socket,
     const research_interface::robot::GetRobotModel::Header& header,
     const research_interface::robot::GetRobotModel::Response& response) {
-  ZoneScoped;
-
   research_interface::robot::GetRobotModel::Message<
       research_interface::robot::GetRobotModel::Response>
       response_message(header, response);
@@ -324,8 +254,6 @@ void MockServer<C>::handleCommand(
     Socket& tcp_socket,
     std::function<typename T::Response(const typename T::Request&)> callback,
     uint32_t* command_id) {
-  ZoneScoped;
-
   typename T::Header header;
   typename T::Request request = receiveRequest<T>(tcp_socket, &header);
   if (command_id != nullptr) {
@@ -342,8 +270,6 @@ template <typename T>
 MockServer<C>& MockServer<C>::waitForCommand(
     std::function<typename T::Response(const typename T::Request&)> callback,
     uint32_t* command_id) {
-  ZoneScoped;
-
   using namespace std::string_literals;
 
   std::lock_guard<std::mutex> _(command_mutex_);

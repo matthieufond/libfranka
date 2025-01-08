@@ -185,6 +185,12 @@ if(BUILD_TESTS)
   add_subdirectory(test)
 endif()
 
+option(BUILD_AESCAPE_MOCK_SERVER "Build aescape_mock_server" ON)
+if(BUILD_AESCAPE_MOCK_SERVER)
+  enable_testing()
+  add_subdirectory(mock)
+endif()
+
 option(BUILD_EXAMPLES "Build example code" ON)
 if(BUILD_EXAMPLES)
   add_subdirectory(examples)

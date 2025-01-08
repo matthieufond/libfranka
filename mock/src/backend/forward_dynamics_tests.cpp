@@ -1,4 +1,4 @@
-#include "forward_dynamics.h"
+#include <franka_mock/backend/forward_dynamics.h>
 
 #include <gtest/gtest.h>
 #include <iostream>
@@ -9,7 +9,7 @@
 namespace aescape {
 constexpr bool kDebug = false;  // Enable debug print
 
-const std::string kUrdfPath = std::string(FRANKA_TEST_SOURCE_DIR) + "/fr3.urdf";
+const std::string kUrdfPath = std::string(AESCAPE_MOCK_SOURCE_DIR) + "/resources/aescape_simulation_panda.urdf";
 const Eigen::IOFormat kcleanFmt(4, 0, ", ", "\n", "[", "]");
 constexpr double kEpsilon = 1e-3;
 constexpr size_t kIterations = 2;

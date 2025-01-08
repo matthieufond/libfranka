@@ -1,7 +1,7 @@
 #pragma once
 
 #include <pinocchio/multibody/model.hpp>
-#include "common.h"
+#include <franka_mock/common.h>
 
 namespace aescape {
 /*

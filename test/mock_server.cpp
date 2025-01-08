@@ -1,7 +1,6 @@
 // Copyright (c) 2023 Franka Robotics GmbH
 // Use of this source code is governed by the Apache-2.0 license, see LICENSE
 #include "mock_server.h"
-#include "logging_macros.h"
 
 #include <sstream>
 
@@ -11,14 +10,13 @@
 #include <gtest/gtest.h>
 
 template <typename C>
-MockServer<C>::MockServer(ConnectCallbackT on_connect, uint32_t sequence_number, std::string ip)
+MockServer<C>::MockServer(ConnectCallbackT on_connect, uint32_t sequence_number)
     : block_{false},
       shutdown_{false},
       continue_{false},
       initialized_{false},
       sequence_number_{sequence_number},
-      on_connect_{on_connect},
-      ip_(std::move(ip)) {
+      on_connect_{on_connect} {
   std::unique_lock<std::mutex> lock(command_mutex_);
   server_thread_ = std::thread(&MockServer<C>::serverThread, this);
 
@@ -47,8 +45,6 @@ MockServer<C>::~MockServer() {
 template <typename C>
 MockServer<C>& MockServer<C>::onReceiveRobotCommand(
     ReceiveRobotCommandCallbackT on_receive_robot_command) {
-  ZoneScoped;
-
   std::lock_guard<std::mutex> _(command_mutex_);
   commands_.emplace_back("onReceiveRobotCommand", [=](Socket&, Socket& udp_socket) {
     research_interface::robot::RobotCommand robot_command;
@@ -61,33 +57,7 @@ MockServer<C>& MockServer<C>::onReceiveRobotCommand(
 }
 
 template <typename C>
-MockServer<C>& MockServer<C>::onReceiveRobotCommandSeparateQueue(
-    ReceiveRobotCommandCallbackT on_receive_robot_command) {
-  ZoneScoped;
-
-  std::lock_guard<std::mutex> _(udp_command_mutex_);
-  udp_commands_.emplace_back("onReceiveRobotCommandSeparateQueue", [=](Socket&, Socket& udp_socket) {
-    research_interface::robot::RobotCommand robot_command;
-    do {
-      ZoneScopedN("RcvOneUDPCommand");
-      robot_command.message_id = 0;
-      udp_socket.receiveBytes(&robot_command, sizeof(robot_command));
-
-      TRACY_MESSAGE(msg, "sequence_number:{},robot_command.message_id:{}", MockServer<C>::sequenceNumber(), robot_command.message_id);
-    } while (robot_command.message_id < sequenceNumber() && robot_command.message_id != 0);
-    if (on_receive_robot_command) {
-      on_receive_robot_command(robot_command);
-    }
-  });
-  udp_cv_.notify_one();
-  return *this;
-}
-
-
-template <typename C>
 MockServer<C>& MockServer<C>::spinOnce() {
-  ZoneScoped;
-
   std::unique_lock<std::mutex> lock(command_mutex_);
   continue_ = true;
   cv_.notify_one();
@@ -107,7 +77,7 @@ template <typename C>
 void MockServer<C>::serverThread() {
   std::unique_lock<std::mutex> lock(command_mutex_);
 
-  const char* kHostname = ip_.c_str();
+  constexpr const char* kHostname = "127.0.0.1";
   Poco::Net::ServerSocket srv;
   srv.bind({kHostname, C::kCommandPort}, true);
   srv.listen();
@@ -148,7 +118,6 @@ void MockServer<C>::serverThread() {
 
   Poco::Net::DatagramSocket udp_socket({kHostname, 0});
   udp_socket.setBlocking(true);
-  udp_socket.setReceiveTimeout(Poco::Timespan(0, 1000));
   Socket udp_socket_wrapper;
   udp_socket_wrapper.sendBytes = [&](const void* data, size_t size) {
     std::lock_guard<std::mutex> _(udp_mutex_);
@@ -157,40 +126,25 @@ void MockServer<C>::serverThread() {
   };
   udp_socket_wrapper.receiveBytes = [&](void* data, size_t size) {
     std::lock_guard<std::mutex> _(udp_mutex_);
-    try {
-      int rv = udp_socket.receiveFrom(data, size, remote_address);
-      ASSERT_EQ(static_cast<int>(size), rv) << "Receive error on UDP socket";
-    } catch(const Poco::TimeoutException& exc) {
-      std::cout << "TImeout receiving command" << std::endl;
-    }
+    int rv = udp_socket.receiveFrom(data, size, remote_address);
+    ASSERT_EQ(static_cast<int>(size), rv) << "Receive error on UDP socket";
   };
-
-  tcp_socket_wrapper_ = tcp_socket_wrapper;
-  udp_socket_wrapper_ = udp_socket_wrapper;
 
   sendInitialState(udp_socket_wrapper);
 
-  std::cout << "Starting two threads to handle commands" << std::endl;
-
-  // todo: start two threads, one for tcp and one for udp
-  auto udp_only_command_thread_ = std::thread(&MockServer<C>::UdpOnlyThread, this);
-
   while (!shutdown_) {
-    ZoneScopedN("server_loop");
     cv_.wait(lock, [this] { return continue_ || shutdown_; });
     while (!commands_.empty()) {
       auto callback = commands_.front().second;
       commands_.pop_front();
       lock.unlock();
-      callback(tcp_socket_wrapper_, udp_socket_wrapper_);
+      callback(tcp_socket_wrapper, udp_socket_wrapper);
       lock.lock();
     }
 
     continue_ = false;
     cv_.notify_one();
   }
-  
-  udp_only_command_thread_.join();
 
   if (!ignore_udp_buffer_) {
     EXPECT_FALSE(udp_socket.poll(Poco::Timespan(), Poco::Net::Socket::SelectMode::SELECT_READ))
@@ -208,30 +162,8 @@ void MockServer<C>::serverThread() {
 }
 
 template <typename C>
-void MockServer<C>::UdpOnlyThread() {
-  std::unique_lock<std::mutex> udp_cmd_lck(udp_command_mutex_);
-  while (!shutdown_) {
-    ZoneScopedN("UdpOnlyThread");
-
-    {
-      ZoneScopedN("WaitForUDPCommands");
-      udp_cv_.wait(udp_cmd_lck, [this]{return !udp_commands_.empty();});
-    }
-    while (!udp_commands_.empty()) {
-      auto callback = udp_commands_.front().second;
-      udp_commands_.pop_front();
-      udp_cmd_lck.unlock();
-      callback(tcp_socket_wrapper_, udp_socket_wrapper_);
-      udp_cmd_lck.lock();
-    }
-  }
-}
-
-template <typename C>
 MockServer<C>& MockServer<C>::generic(
     std::function<void(MockServer<C>::Socket&, MockServer<C>::Socket&)> generic_command) {
-  ZoneScoped;
-
   std::lock_guard<std::mutex> _(command_mutex_);
   commands_.emplace_back("generic", generic_command);
   return *this;
@@ -242,8 +174,6 @@ void MockServer<C>::sendInitialState(Socket&) {}
 
 template <>
 void MockServer<RobotTypes>::sendInitialState(Socket& udp_socket) {
-  ZoneScoped;
-
   research_interface::robot::RobotState state{};
   state.message_id = ++sequence_number_;
   udp_socket.sendBytes(&state, sizeof(state));
@@ -251,8 +181,6 @@ void MockServer<RobotTypes>::sendInitialState(Socket& udp_socket) {
 
 template <typename C>
 MockServer<C>& MockServer<C>::doForever(std::function<bool()> callback) {
-  ZoneScoped;
-
   std::lock_guard<std::mutex> _(command_mutex_);
   return doForever(callback, commands_.end());
 }
@@ -260,8 +188,6 @@ MockServer<C>& MockServer<C>::doForever(std::function<bool()> callback) {
 template <typename C>
 MockServer<C>& MockServer<C>::doForever(std::function<bool()> callback,
                                         typename decltype(MockServer::commands_)::iterator it) {
-  ZoneScoped;
-
   auto callback_wrapper = [=](Socket&, Socket&) {
     std::unique_lock<std::mutex> lock(command_mutex_);
     if (shutdown_) {

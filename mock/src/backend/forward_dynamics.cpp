@@ -1,4 +1,4 @@
-#include "forward_dynamics.h"
+#include <franka_mock/backend/forward_dynamics.h>
 
 #include <pinocchio/algorithm/aba.hpp>
 #include <pinocchio/algorithm/crba.hpp>

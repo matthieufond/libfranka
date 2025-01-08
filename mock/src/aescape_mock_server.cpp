@@ -1,15 +1,9 @@
+#include <franka_mock/aescape_mock_server.h>
 #include "mock_server.h"
-#include "helpers.h"
-#include <robot_impl.h>
 #include "logging_macros.h"
 
-#include <backend/forward_dynamics_backend.h>
+#include <fstream>
 #include <magic_enum.hpp>
-#include <pinocchio/algorithm/compute-all-terms.hpp>
-#include <pinocchio/algorithm/crba.hpp>
-#include <pinocchio/algorithm/joint-configuration.hpp>
-#include <pinocchio/multibody/model.hpp>
-#include <pinocchio/parsers/urdf.hpp>
 
 /*
  * Mock Server Example
@@ -23,6 +17,7 @@ namespace r = research_interface::robot;
 using move_ctrl_mode_t = r::Move::ControllerMode;
 using move_motion_mode_t = r::Move::MotionGeneratorMode;
 
+namespace aescape {
 /*
  * Convert enums from research_interface::robot::Move::ControllerMode to
  * research_interface::robot::ControllerMode
@@ -36,7 +31,7 @@ r::ControllerMode convertMode(const move_ctrl_mode_t& mode) {
     case move_ctrl_mode_t::kJointImpedance:
       return r::ControllerMode::kJointImpedance;
     default:
-      LOG_INFO("Unknown Controller Mode: {}", mode);
+      LOG_INFO("Unknown Controller Mode");
       return r::ControllerMode::kOther;
   }
 }
@@ -68,25 +63,23 @@ struct Modes {
 /*
  * Create a success move response
  */
-r::Move::Response moveSuccessResp() {
+inline r::Move::Response moveSuccessResp() {
   return r::Move::Response(r::Move::Status::kSuccess);
 }
 
-constexpr int kNumJoints = 7;
-
 /*
- * Aescape MockServer example
+ * Aescape Mock Server
  */
 template <typename C>
-class AescapeMockServer : public MockServer<C> {
+class AescapeMockServer<C>::Impl : public MockServer<C> {
  public:
-  AescapeMockServer(
+  Impl(
       std::shared_ptr<aescape::BackendInterface> robot_backend,
       double state_send_rate_hz,
       const std::string& urdfPath,
       uint32_t sequence_number = 0,
       std::string ip = "127.0.0.1")
-      : MockServer<C>(std::bind(&AescapeMockServer::onConnect, this, _1),
+      : MockServer<C>(std::bind(&Impl::onConnect, this, _1),
         sequence_number, std::move(ip)),
         robot_backend_(robot_backend),
         state_send_rate_hz_(state_send_rate_hz),
@@ -99,12 +92,12 @@ class AescapeMockServer : public MockServer<C> {
       }
 
   void startUpdateThread(){
-    update_thread_ = std::thread(&AescapeMockServer::updateLoop, this);
+    update_thread_ = std::thread(&Impl::updateLoop, this);
   }
   /*
    * Handle robot.readOnce() by responding with the robot state
    */
-  AescapeMockServer& handleReadOnce() {
+  Impl& handleReadOnce() {
     ZoneScoped;
 
     MockServer<C>::template onSendUDPSeparateQueue<r::RobotState>(
@@ -128,7 +121,7 @@ class AescapeMockServer : public MockServer<C> {
   /*
    * Handle robot.update() by sending the robot state and receiving the robot command
    */
-  AescapeMockServer& handleUpdate() {
+  AescapeMockServer<C>::Impl& handleUpdate() {
     ZoneScoped;
 
     handleReadOnce().onReceiveRobotCommandSeparateQueue(
@@ -157,13 +150,13 @@ class AescapeMockServer : public MockServer<C> {
   /*
    * Wait for a move command and responding with a success
    */
-  AescapeMockServer& waitForMove() {
+  AescapeMockServer<C>::Impl& waitForMove() {
     ZoneScoped;
 
     MockServer<C>::template waitForCommand<r::Move>(
         [&](const r::Move::Request& req) {
           ZoneScopedN("WaitForMove");
-          std::lock_guard<std::mutex> state_lck(mut_);
+          std::unique_lock<std::mutex> state_lck(mut_);
           modes_.motion_mode = convertMode(req.motion_generator_mode);
           modes_.ctrl_mode = convertMode(req.controller_mode);
           modes_.robot_mode = r::RobotMode::kMove;
@@ -171,8 +164,10 @@ class AescapeMockServer : public MockServer<C> {
                    magic_enum::enum_name(modes_.ctrl_mode),
                    magic_enum::enum_name(modes_.motion_mode));
 
+          state_lck.unlock();
           // Stop Update Thread
           stopUpdateLoop();
+          LOG_INFO("Stopped Update Thread");
 
           return moveSuccessResp();
         },
@@ -184,7 +179,7 @@ class AescapeMockServer : public MockServer<C> {
   /*
    * Respond to the move command with a success without waiting for a request
    */
-  AescapeMockServer& respondMove() {
+  AescapeMockServer<C>::Impl& respondMove() {
     ZoneScoped;
     MockServer<C>::template sendResponse<r::Move>(move_id_, moveSuccessResp);
     return *this;
@@ -193,42 +188,48 @@ class AescapeMockServer : public MockServer<C> {
   /*
    * Override MockServer SpinOnce to return the derived AescapeMockServer class instead
    */
-  AescapeMockServer& spinOnce() override {
+  AescapeMockServer<C>::Impl& spinOnce() override {
     MockServer<C>::spinOnce();
     return *this;
   }
 
   void updateLoop() {
     ZoneScoped;
+
+    std::unique_lock<std::mutex> lck(mut_);
+
     // Run without update if we are not in state loop and not stopped
-    while (!in_state_loop_) {
+    while (!stop_update_thread_) {
+      lck.unlock();
       handleReadOnce();
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      lck.lock();
     }
   }
 
   void stateLoop() {
-    in_state_loop_ = true;
+    /**
+     * Send states and wait for commands from the client. Everytime a command is received, we compute
+     * the next state and send it back. 
+     */
     ZoneScoped;
     using clock = std::chrono::steady_clock;
     uint64_t cycles = 0;
     auto init_time = clock::now();
     uint64_t dt_us = 1e6 / state_send_rate_hz_;
-    //state_.message_id = MockServer<C>::sequenceNumber() + 1;
 
     std::unique_lock<std::mutex> mut(mut_);
-
 
     while (!stopped_) {
       ZoneScopedN("SendStateLoop");
 
       mut.unlock();
 
+      // Start of the loop, determine when the next loop is supposed to run
       auto deadline = std::chrono::microseconds(++cycles*dt_us) + init_time;
 
+      // Send current state back to client and wait for next command, or command rcv timeout
       handleUpdate();
-
-      // Wait until we receive a new command or timeout
 
       mut.lock();
 
@@ -254,27 +255,38 @@ class AescapeMockServer : public MockServer<C> {
       }
 
       // Sleep until appropriate to send the computed state
-
       auto prev_time = clock::now();
       auto tts = std::chrono::duration_cast<std::chrono::microseconds>(deadline - prev_time);
-
       std::this_thread::sleep_for(tts);
 
-      if (std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - prev_time).count() > std::abs(1.2*tts.count())) {
-        std::cout << "Missed deadline by more than 20%, expected " << tts.count() << "us slept " << std::chrono::duration_cast<std::chrono::microseconds>(clock::now()-prev_time).count() << "us" << std::endl;
-      }
-
       mut.lock();
+      // Update state under lock
       state_ = state;
     }
     LOG_INFO("getting out of state loop");
-    in_state_loop_ = false;
-
   }
 
   void stopUpdateLoop() {
-    in_state_loop_ = true;
-    //update_thread_.join();
+    std::unique_lock<std::mutex> lck(mut_);
+    if (!stop_update_thread_) {
+      stop_update_thread_ = true;
+      lck.unlock();
+      cv_.notify_all();
+      update_thread_.join();
+    }
+  }
+
+  void stopStateLoop() {
+    std::lock_guard<std::mutex> lck(mut_);
+    if (!stopped_)  {
+      stopped_ = true;
+      cv_.notify_all();
+    }
+  }
+
+  void stop() {
+    stopUpdateLoop();
+    stopStateLoop();
   }
 
   void run() {
@@ -374,11 +386,10 @@ class AescapeMockServer : public MockServer<C> {
       
   }
 
-  ~AescapeMockServer() 
+  ~Impl() 
   {
+    stop();
     MockServer<C>::ignoreUdpBuffer();
-    destructor_called_ = true;
-    update_thread_.join();
     std::cout << "Destructor call finished" << std::endl;
   }
 
@@ -395,7 +406,7 @@ class AescapeMockServer : public MockServer<C> {
   std::vector<char> loadModelStream() {
     // Prepare for load model
     std::ifstream model_library_stream(
-        FRANKA_TEST_BINARY_DIR + "/libfcimodels.so"s,
+        AESCAPE_MOCK_BINARY_DIR + "/libaescape_fcimodels.so"s,
         std::ios_base::in | std::ios_base::binary | std::ios_base::ate);
     std::vector<char> buffer;
     buffer.resize(model_library_stream.tellg());
@@ -433,7 +444,29 @@ class AescapeMockServer : public MockServer<C> {
   r::RobotState state_{};
   bool stopped_{false};
   bool connected_{false};
-  std::atomic_bool in_state_loop_{false};
-  std::atomic_bool destructor_called_{false};
   std::thread update_thread_;
+  bool stop_update_thread_{false};
 };
+
+template <typename C>
+AescapeMockServer<C>::AescapeMockServer(std::shared_ptr<aescape::BackendInterface> robot_backend,
+    double state_send_rate_hz,
+    const std::string& urdf_path,
+    std::string ip) :
+        impl_(std::make_unique<Impl>(robot_backend, state_send_rate_hz, urdf_path, 0, ip)) {}
+
+
+template <typename C>
+AescapeMockServer<C>::~AescapeMockServer() = default;
+
+template <typename C>
+void AescapeMockServer<C>::run() {
+    impl_->run();
+}
+
+template <typename C>
+void AescapeMockServer<C>::stop() {
+    impl_->stop();
+}
+
+}
