@@ -47,7 +47,6 @@ Requires Franka Research 3 system version >= 5.5.0
 
 * Hotfix: (temporary-workaround) for max-path-pose-deviation in ExternalMode for active control.
 
-
 ## 0.13.1 - 2023-11-30
 
 * Hotfix: (temporary-workaround) for max-path-pose-deviation in ExternalMode for callback based control.
